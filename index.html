@@ -192,7 +192,7 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
   </header>
 
   <div class="tabs" id="tabs" role="tablist" hidden>
-    <button role="tab" id="tabMine" aria-selected="true">My shifts</button>
+    <button role="tab" id="tabMine" aria-selected="true">Shifts</button>
     <button role="tab" id="tabShared" aria-selected="false">Shared with me</button>
   </div>
 
@@ -202,9 +202,10 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
       <span class="readonly">View only</span>
     </div>
     <div class="field" id="ownerPickWrap">
-      <label class="label" for="ownerPick">Caregiver</label>
+      <label class="label" for="ownerPick">Patient</label>
       <select id="ownerPick"></select>
     </div>
+    <div id="sharedWho"></div>
     <div class="rowline">
       <span class="hint" id="sharedUpdated"></span>
       <button class="ghost" id="sharedRefresh">Refresh</button>
@@ -248,6 +249,8 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
   <p class="foot" id="foot">Loading your shifts…</p>
 </div>
 
+<datalist id="people"></datalist>
+
 <script src="config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.93.3"></script>
 <script>
@@ -273,14 +276,14 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
   let me = null;               // {id, email}
   let sync = { state: "off", last: null, msg: "" };   // off | syncing | ok | wait | bad
   let signin = { step: "email", email: "", busy: false, err: "", info: "" };
-  let shares = [];             // emails I share with
+  let shares = [];             // [{email, person}]: who sees which of my patients
   let profile = { display_name: "" };
-  let shareUi = { err: "", confirm: null, busy: false, savedName: false };
+  let shareUi = { err: "", ok: "", confirm: null, busy: false, savedName: false, person: "", email: "" };
   let signoutConfirm = false;
 
-  // people who shared with me
-  let sharedOwners = [];       // [{owner, name, email}]
-  let sharedOwner = null;      // owner uuid being viewed
+  // patients other caregivers shared with me
+  let sharedOwners = [];       // [{key, owner, person, name, email}], one per caregiver + patient
+  let sharedOwner = null;      // key of the one being viewed
   let sharedShifts = [];       // shifts of sharedOwner (read only)
   let sharedLoadedAt = null;
   let sharedErr = "";
@@ -319,6 +322,19 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
   const timeVal = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
   const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
   const endOf = s => s.end ?? Date.now();
+  // Same rule as the database: "Mom", "mom" and " Mom " are one patient.
+  const samePerson = p => String(p || "").replace(/\s+/g, " ").trim().toLowerCase();
+  // Your patients, spelled the way you most recently entered them.
+  function patients() {
+    const m = new Map();
+    for (const s of mine().sort((a, b) => a.start - b.start)) if (samePerson(s.person)) m.set(samePerson(s.person), s.person.trim());
+    return [...m.values()].sort((a, b) => a.localeCompare(b));
+  }
+  // "mom" typed again becomes "Mom" if that's how the patient already appears.
+  function matchPatient(name) {
+    const hit = patients().find(p => samePerson(p) === samePerson(name));
+    return hit || name;
+  }
 
   const mine = () => shifts.filter(s => !s.deleted);
   const active = () => mine().filter(s => !s.end).sort((a, b) => b.start - a.start)[0];
@@ -354,7 +370,8 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
   }
   function remove(id) {
     const s = shifts.find(x => x.id === id);
-    if (s) put({ ...s, deleted: true });
+    // Keep a marker so other devices learn about the delete, but drop the note.
+    if (s) put({ ...s, deleted: true, note: "" });
   }
 
   // ================= online sync =================
@@ -447,10 +464,10 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
   async function loadShares() {
     if (!sb || !me) return;
     const [s, p] = await Promise.all([
-      sb.from("shares").select("viewer_email").eq("owner", me.id).order("created_at"),
+      sb.from("shares").select("viewer_email, person").eq("owner", me.id).order("created_at"),
       sb.from("profiles").select("display_name, email").eq("id", me.id).maybeSingle(),
     ]);
-    if (!s.error) shares = s.data.map(r => r.viewer_email);
+    if (!s.error) shares = s.data.map(r => ({ email: r.viewer_email, person: r.person }));
     if (!p.error) profile = p.data || { display_name: "", email: "" };
     renderSync();
     return !p.error;
@@ -458,7 +475,7 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
 
   async function loadSharedWithMe() {
     if (!sb || !me) return;
-    const { data: rows, error } = await sb.from("shares").select("owner").eq("viewer_email", (me.email || "").toLowerCase()).neq("owner", me.id);
+    const { data: rows, error } = await sb.from("shares").select("owner, person").eq("viewer_email", (me.email || "").toLowerCase()).neq("owner", me.id);
     if (error) return;
     const ids = [...new Set(rows.map(r => r.owner))];
     let names = {};
@@ -466,9 +483,13 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
       const pr = await sb.from("profiles").select("id, display_name, email").in("id", ids);
       if (!pr.error) for (const p of pr.data) names[p.id] = p;
     }
-    sharedOwners = ids.map(id => ({ owner: id, name: (names[id] && names[id].display_name) || (names[id] && names[id].email) || "A caregiver", email: (names[id] && names[id].email) || "" }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-    if (!sharedOwners.some(o => o.owner === sharedOwner)) sharedOwner = sharedOwners[0] ? sharedOwners[0].owner : null;
+    const seen = new Set();
+    sharedOwners = rows.map(r => {
+      const n = names[r.owner] || {};
+      return { key: r.owner + "|" + samePerson(r.person), owner: r.owner, person: r.person.trim(), name: n.display_name || n.email || "A caregiver", email: n.email || "" };
+    }).filter(o => !seen.has(o.key) && seen.add(o.key))
+      .sort((a, b) => a.person.localeCompare(b.person) || a.name.localeCompare(b.name));
+    if (!sharedOwners.some(o => o.key === sharedOwner)) sharedOwner = sharedOwners[0] ? sharedOwners[0].key : null;
     // Someone who only views shared hours lands on that view.
     if (sharedOwners.length && !mine().length && view === "mine") view = "shared";
     if (!sharedOwners.length) view = "mine";
@@ -478,10 +499,12 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
 
   async function loadSharedShifts() {
     sharedErr = "";
-    if (!sb || !sharedOwner) { sharedShifts = []; return; }
+    const o = sharedOwners.find(o => o.key === sharedOwner);
+    if (!sb || !o) { sharedShifts = []; return; }
     try {
-      const rows = await fetchAll(() => sb.from("shifts").select("*").eq("owner", sharedOwner).eq("deleted", false).order("id"));
-      sharedShifts = rows.map(fromRow);
+      const rows = await fetchAll(() => sb.from("shifts").select("*").eq("owner", o.owner).eq("deleted", false).order("id"));
+      // The database only returns patients shared with you; this keeps each patient on its own page.
+      sharedShifts = rows.map(fromRow).filter(s => samePerson(s.person) === samePerson(o.person));
       sharedLoadedAt = Date.now();
     } catch (e) {
       sharedErr = "Couldn't load the latest hours. Check your connection and tap Refresh.";
@@ -542,9 +565,11 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
     $("addBtn").hidden = sh;
     if (sh) {
       $("ownerPickWrap").hidden = sharedOwners.length < 2;
-      $("ownerPick").innerHTML = sharedOwners.map(o => `<option value="${esc(o.owner)}"${o.owner === sharedOwner ? " selected" : ""}>${esc(o.name)}</option>`).join("");
-      const o = sharedOwners.find(o => o.owner === sharedOwner);
-      $("sharedUpdated").textContent = sharedErr || (o ? `${o.name}${sharedOwners.length < 2 && o.email && o.email !== o.name ? " · " + o.email : ""}${sharedLoadedAt ? " · updated " + tFmt.format(new Date(sharedLoadedAt)) : ""}` : "");
+      const caregivers = new Set(sharedOwners.map(o => o.owner)).size;
+      $("ownerPick").innerHTML = sharedOwners.map(o => `<option value="${esc(o.key)}"${o.key === sharedOwner ? " selected" : ""}>${esc(o.person)}${caregivers > 1 ? " · " + esc(o.name) : ""}</option>`).join("");
+      const o = sharedOwners.find(o => o.key === sharedOwner);
+      $("sharedWho").innerHTML = o ? `<h2>${esc(o.person)}</h2><p class="hint">Cared for by ${esc(o.name)}${o.email && o.email !== o.name ? " · " + esc(o.email) : ""}</p>` : "";
+      $("sharedUpdated").textContent = sharedErr || (sharedLoadedAt ? "Updated " + tFmt.format(new Date(sharedLoadedAt)) : "");
     }
   }
   $("tabMine").addEventListener("click", () => { view = "mine"; weekOffset = 0; closeForm(); renderAll(); });
@@ -560,7 +585,7 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
     if (a) {
       if (noteForId !== a.id) { noteForId = a.id; draftNote = a.note || ""; }
       el.innerHTML = `
-        <div class="status"><span class="dot"></span>On the clock${a.person ? ` · caring for ${esc(a.person)}` : ""}</div>
+        <div class="status"><span class="dot"></span>On the clock${a.person ? ` · ${esc(a.person)}` : ""}</div>
         <div><div class="timer" id="timer">${clockText(Date.now() - a.start)}</div>
         <div class="since">Started at ${tFmt.format(new Date(a.start))}${sameDay(new Date(a.start), new Date()) ? "" : ", " + shortFmt.format(new Date(a.start))}</div></div>
         <div class="field"><label class="label" for="noteIn">Notes for this shift</label>
@@ -577,14 +602,13 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
       });
     } else {
       noteForId = null;
-      const people = [...new Set(mine().map(s => s.person).filter(Boolean))];
       el.innerHTML = `
         <div class="status"><span class="dot"></span>Off the clock</div>
-        <div class="field"><label class="label" for="personIn">Caring for</label>
-          <input id="personIn" list="people" autocomplete="off" placeholder="Name (optional)" value="${esc(draftPerson)}">
-          <datalist id="people">${people.map(p => `<option value="${esc(p)}"></option>`).join("")}</datalist></div>
+        <div class="field"><label class="label" for="personIn">Patient</label>
+          <input id="personIn" list="people" autocomplete="off" placeholder="Patient's name" value="${esc(draftPerson)}">
+          <div class="err" id="clockErr" role="alert"></div></div>
         <button class="big" id="clockBtn">Clock in</button>`;
-      $("personIn").addEventListener("input", e => { draftPerson = e.target.value; });
+      $("personIn").addEventListener("input", e => { draftPerson = e.target.value; $("clockErr").textContent = ""; });
     }
     $("clockBtn").addEventListener("click", onClock);
   }
@@ -594,8 +618,10 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
       draftPerson = a.person || "";
       put({ ...a, end: Math.max(Date.now(), a.start), note: draftNote });
     } else {
+      const person = draftPerson.replace(/\s+/g, " ").trim();
+      if (!person) { $("clockErr").textContent = "Enter the patient's name to clock in."; $("personIn").focus(); return; }
       weekOffset = 0;
-      put({ id: newId(), start: Date.now(), end: null, person: draftPerson.trim(), note: "" });
+      put({ id: newId(), start: Date.now(), end: null, person: matchPatient(person), note: "" });
     }
   }
 
@@ -658,7 +684,7 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
     const st = new Date(s.start), live = !s.end;
     const en = live ? null : new Date(s.end);
     const range = `${tFmt.format(st)} – ${live ? "now" : tFmt.format(en)}${en && !sameDay(st, en) ? " (next day)" : ""}`;
-    const meta = [s.person && `Caring for ${esc(s.person)}`, s.note && esc(s.note), s.failed && "Not saved online"].filter(Boolean).join(" · ");
+    const meta = [s.person ? `<b>${esc(s.person)}</b>` : "No patient", s.note && esc(s.note), s.failed && "Not saved online"].filter(Boolean).join(" · ");
     const confirm = confirmId === s.id ? `<div class="confirm"><span>Delete this shift?</span>
       <button class="link danger" data-act="del-yes" data-id="${esc(s.id)}">Delete</button>
       <button class="link" data-act="del-no">Keep it</button></div>` : "";
@@ -694,7 +720,7 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
           <div class="field"><label class="label" for="fEnd">End</label><input type="time" id="fEnd" value="${timeVal(en)}" required></div>
         </div>
         <div class="hint" id="fHint"></div>
-        <div class="field"><label class="label" for="fPerson">Caring for</label><input id="fPerson" list="people" value="${esc(s ? s.person : draftPerson)}" placeholder="Name (optional)"></div>
+        <div class="field"><label class="label" for="fPerson">Patient</label><input id="fPerson" list="people" autocomplete="off" value="${esc(s ? s.person : draftPerson)}" placeholder="Patient's name"></div>
         <div class="field"><label class="label" for="fNote">Notes</label><textarea id="fNote">${esc(s ? s.note : "")}</textarea></div>
         <div class="err" id="fErr" role="alert"></div>
         <div class="formacts"><button class="btn" type="submit">${s ? "Save changes" : "Add shift"}</button>
@@ -714,8 +740,10 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
       if (!r) { $("fErr").textContent = "Enter a date, a start time and an end time."; return; }
       if (r.end - r.start > 24 * HOUR) { $("fErr").textContent = "A shift can't be longer than 24 hours."; return; }
       if (r.end > Date.now() + 60000) { $("fErr").textContent = "That shift ends in the future. Use Clock in for a shift that's happening now."; return; }
+      const person = $("fPerson").value.replace(/\s+/g, " ").trim();
+      if (!person) { $("fErr").textContent = "Enter the patient's name."; $("fPerson").focus(); return; }
       const prev = formOpen.prev;
-      put({ id: formOpen.id || newId(), start: r.start, end: r.end, person: $("fPerson").value.trim(), note: $("fNote").value.trim(), updatedAt: prev ? prev.updatedAt : 0 });
+      put({ id: formOpen.id || newId(), start: r.start, end: r.end, person: matchPatient(person), note: $("fNote").value.trim(), updatedAt: prev ? prev.updatedAt : 0 });
       weekOffset = Math.round((weekStart(new Date(r.start)) - weekStart(new Date())) / (7 * 24 * HOUR));
       closeForm(); renderAll();
     });
@@ -744,7 +772,7 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
   $("csvBtn").addEventListener("click", () => {
     const ws = viewWeek(), we = addDays(ws, 7).getTime();
     const rows = data().filter(s => s.end && s.start >= ws.getTime() && s.start < we).sort((a, b) => a.start - b.start);
-    const lines = [["Date", "Start", "End", "Hours", "Caring for", "Notes"]];
+    const lines = [["Date", "Start", "End", "Hours", "Patient", "Notes"]];
     let total = 0;
     for (const s of rows) {
       const h = (s.end - s.start) / HOUR; total += h;
@@ -752,7 +780,8 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
     }
     lines.push(["Total", "", "", total.toFixed(2), "", ""]);
     const csv = lines.map(r => r.map(csvCell).join(",")).join("\r\n");
-    const who = view === "shared" ? ((sharedOwners.find(o => o.owner === sharedOwner) || {}).name || "caregiver") : "";
+    const so = sharedOwners.find(o => o.key === sharedOwner);
+    const who = view === "shared" && so ? `${so.person} ${so.name}` : "";
     const slug = who ? who.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" : "";
     const blob = new Blob([csv], { type: "text/csv" });
     const a = document.createElement("a");
@@ -840,18 +869,25 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
           <div class="ok-msg">${shareUi.savedName ? "Name saved." : ""}</div>
         </form>
         <div class="field">
-          <span class="label">People who can see your hours</span>
-          ${shares.length ? `<ul class="people">${shares.map(e => `<li><span>${esc(e)}</span>${shareUi.confirm === e
-            ? `<span class="inline"><button class="link danger" data-unshare-yes="${esc(e)}">Stop sharing</button><button class="link" data-unshare-no="1">Cancel</button></span>`
-            : `<button class="link danger" data-unshare="${esc(e)}">Remove</button>`}</li>`).join("")}</ul>`
-            : `<p class="hint">Nobody yet. Add the email of someone who pays you.</p>`}
+          <span class="label">Who can see each patient's shifts</span>
+          ${shares.length ? sharedGroups().map(g => `<div class="field"><b>${esc(g.person)}</b><ul class="people">${g.items.map(x => {
+            const k = shareKey(x);
+            return `<li><span>${esc(x.email)}</span>${shareUi.confirm === k
+              ? `<span class="inline"><button class="link danger" data-unshare-yes="${esc(k)}">Stop sharing</button><button class="link" data-unshare-no="1">Cancel</button></span>`
+              : `<button class="link danger" data-unshare="${esc(k)}">Remove</button>`}</li>`;
+          }).join("")}</ul></div>`).join("")
+            : `<p class="hint">Nobody yet. Share a patient with the person who pays for their care.</p>`}
         </div>
         <form id="shareForm" class="field" novalidate>
-          <label class="label" for="shareEmail">Share your hours with</label>
-          <div class="inline"><input id="shareEmail" type="email" inputmode="email" placeholder="payer@example.com">
-          <button class="btn" type="submit" ${shareUi.busy ? "disabled" : ""}>Share</button></div>
+          <span class="label">Share a patient</span>
+          <div class="field"><label class="label" for="sharePerson">Patient</label>
+            <input id="sharePerson" list="people" autocomplete="off" placeholder="Patient's name" value="${esc(shareUi.person || "")}"></div>
+          <div class="field"><label class="label" for="shareEmail">Payer's email</label>
+            <div class="inline"><input id="shareEmail" type="email" inputmode="email" placeholder="payer@example.com" value="${esc(shareUi.email || "")}">
+            <button class="btn" type="submit" ${shareUi.busy ? "disabled" : ""}>Share</button></div></div>
           <div class="err" role="alert">${esc(shareUi.err)}</div>
-          <p class="hint">They open Care Hours and sign in with that email to see your shifts, including your notes. They can't change anything. You can remove them any time.</p>
+          <div class="ok-msg">${esc(shareUi.ok || "")}</div>
+          <p class="hint">They sign in to Care Hours with that email and see only that patient's shifts, including notes. They can't change anything, and you can remove them any time.</p>
         </form>`;
       renderSyncState();
       $("signOut").addEventListener("click", () => { signoutConfirm = true; renderSync(); });
@@ -861,6 +897,8 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
       }
       $("nameForm").addEventListener("submit", saveName);
       $("shareForm").addEventListener("submit", addShare);
+      $("sharePerson").addEventListener("input", e => { shareUi.person = e.target.value; });
+      $("shareEmail").addEventListener("input", e => { shareUi.email = e.target.value; });
       el.querySelectorAll("[data-unshare]").forEach(b => b.addEventListener("click", () => { shareUi.confirm = b.dataset.unshare; renderSync(); }));
       el.querySelectorAll("[data-unshare-no]").forEach(b => b.addEventListener("click", () => { shareUi.confirm = null; renderSync(); }));
       el.querySelectorAll("[data-unshare-yes]").forEach(b => b.addEventListener("click", () => removeShare(b.dataset.unshareYes)));
@@ -913,30 +951,50 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
     const { error } = await sb.from("profiles").upsert({ id: me.id, email: me.email, display_name: name });
     if (!error) { profile.display_name = name; shareUi.savedName = true; renderSync(); setTimeout(() => { shareUi.savedName = false; renderSync(); }, 2500); }
   }
+  const shareKey = x => samePerson(x.person) + "|" + x.email;
+  function sharedGroups() {
+    const g = new Map();
+    for (const x of shares) {
+      const k = samePerson(x.person);
+      if (!g.has(k)) g.set(k, { person: x.person, items: [] });
+      g.get(k).items.push(x);
+    }
+    return [...g.values()].sort((a, b) => a.person.localeCompare(b.person));
+  }
   async function addShare(ev) {
     ev.preventDefault();
+    const person = matchPatient(($("sharePerson").value || "").replace(/\s+/g, " ").trim());
     const email = ($("shareEmail").value || "").trim().toLowerCase();
-    shareUi.err = "";
-    if (!emailOk(email)) { shareUi.err = "Enter their full email address, like name@example.com."; renderSync(); return; }
+    shareUi.err = ""; shareUi.ok = "";
+    if (!person) { shareUi.err = "Enter the patient whose shifts you want to share."; renderSync(); $("sharePerson").focus(); return; }
+    if (!emailOk(email)) { shareUi.err = "Enter the payer's full email address, like name@example.com."; renderSync(); $("shareEmail").focus(); return; }
     if (email === (me.email || "").toLowerCase()) { shareUi.err = "That's your own email. Enter the email of the person who pays you."; renderSync(); return; }
-    if (shares.includes(email)) { shareUi.err = `You already share with ${email}.`; renderSync(); return; }
+    if (shares.some(x => x.email === email && samePerson(x.person) === samePerson(person))) { shareUi.err = `${email} can already see ${person}'s shifts.`; renderSync(); return; }
     shareUi.busy = true; renderSync();
-    const { error } = await sb.from("shares").insert({ owner: me.id, viewer_email: email });
+    const { error } = await sb.from("shares").insert({ owner: me.id, viewer_email: email, person });
     shareUi.busy = false;
     if (error) { shareUi.err = "Sharing didn't save. Check your connection and try again."; renderSync(); return; }
-    shares.push(email); renderSync();
+    shares.push({ email, person });
+    const known = patients().some(p => samePerson(p) === samePerson(person));
+    shareUi.ok = known ? `${email} can now see ${person}'s shifts.`
+      : `Shared. You don't have any shifts for "${person}" yet, so they'll see shifts once you clock in with that exact patient name.`;
+    shareUi.email = ""; shareUi.person = "";
+    renderSync();
   }
-  async function removeShare(email) {
-    const { error } = await sb.from("shares").delete().eq("owner", me.id).eq("viewer_email", email);
-    shareUi.confirm = null;
+  async function removeShare(key) {
+    const x = shares.find(x => shareKey(x) === key);
+    shareUi.confirm = null; shareUi.ok = "";
+    if (!x) { renderSync(); return; }
+    const { error } = await sb.from("shares").delete().eq("owner", me.id).eq("viewer_email", x.email).eq("person", x.person);
     if (error) shareUi.err = "That person wasn't removed. Check your connection and try again.";
-    else shares = shares.filter(e => e !== email);
+    else shares = shares.filter(y => y !== x);
     renderSync();
   }
 
   // ================= top-level render =================
   function renderAll() {
     $("today").textContent = dayFmt.format(new Date());
+    $("people").innerHTML = patients().map(p => `<option value="${esc(p)}"></option>`).join("");
     renderTabs();
     if (view === "mine") {
       // Keep the clock card intact while someone is typing in it.

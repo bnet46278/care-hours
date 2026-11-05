@@ -4,9 +4,15 @@
 --
 -- Who can see what:
 --   * A caregiver (the "owner") can read and change only their own shifts.
---   * A caregiver can share their hours with people by email (for example, whoever pays them).
---   * Those people can read the caregiver's shifts but can never change them.
+--   * A caregiver shares one patient at a time with someone by email (for example, whoever pays
+--     for that patient's care).
+--   * That person can read only the shifts whose "Caring for" name matches that patient, and can
+--     never change them. Shifts with no patient name are never shared.
 --   * Everyone else sees nothing.
+--
+-- Version 2 (per-patient sharing). If you ran the first version, run this whole file again.
+-- Shares made with the first version covered all of a caregiver's hours, so they are removed;
+-- share again, picking the patient.
 
 -- ---------- Tables ----------
 
@@ -24,13 +30,21 @@ create table if not exists public.shifts (
   check (end_at is null or end_at >= start_at)
 );
 
--- Who each caregiver shares their hours with.
+-- Which patient's hours each caregiver shares, and with whom.
 create table if not exists public.shares (
   owner         uuid        not null default auth.uid() references auth.users (id) on delete cascade,
   viewer_email  text        not null check (viewer_email = lower(viewer_email) and viewer_email like '%_@_%'),
-  created_at    timestamptz not null default now(),
-  primary key (owner, viewer_email)
+  person        text        not null default '',
+  created_at    timestamptz not null default now()
 );
+
+-- Upgrade from version 1, where a share covered all of a caregiver's hours.
+alter table public.shares add column if not exists person text not null default '';
+delete from public.shares where btrim(person) = '';
+alter table public.shares drop constraint if exists shares_pkey;
+alter table public.shares add constraint shares_pkey primary key (owner, viewer_email, person);
+alter table public.shares drop constraint if exists shares_person_check;
+alter table public.shares add constraint shares_person_check check (char_length(btrim(person)) between 1 and 200);
 
 -- The caregiver's display name, shown to the people they share with.
 create table if not exists public.profiles (
@@ -50,7 +64,24 @@ create or replace function public.my_email() returns text
 language sql stable
 as $$ select lower(coalesce(auth.jwt() ->> 'email', '')) $$;
 
--- True when "the_owner" has shared their hours with the signed-in person.
+-- Patient names are typed by hand, so "Mom", "mom" and " Mom " count as the same patient.
+create or replace function public.same_person(text) returns text
+language sql immutable
+as $$ select lower(btrim(regexp_replace(coalesce($1, ''), '\s+', ' ', 'g'))) $$;
+
+-- True when "the_owner" has shared this patient with the signed-in person.
+create or replace function public.can_view_shift(the_owner uuid, the_person text) returns boolean
+language sql stable security definer set search_path = public
+as $$
+  select public.same_person(the_person) <> '' and public.my_email() <> '' and exists (
+    select 1 from public.shares s
+    where s.owner = the_owner
+      and s.viewer_email = public.my_email()
+      and public.same_person(s.person) = public.same_person(the_person)
+  )
+$$;
+
+-- True when "the_owner" has shared any patient with the signed-in person (to show their name).
 -- security definer lets the check read the shares table without opening it up to everyone.
 create or replace function public.is_shared_with_me(the_owner uuid) returns boolean
 language sql stable security definer set search_path = public
@@ -74,11 +105,11 @@ create policy "owner manages own shifts" on public.shifts
   using (owner = auth.uid())
   with check (owner = auth.uid());
 
--- Shifts: people the owner shared with can read (never write).
+-- Shifts: people the owner shared a patient with can read that patient's shifts (never write).
 drop policy if exists "shared viewers read shifts" on public.shifts;
 create policy "shared viewers read shifts" on public.shifts
   for select to authenticated
-  using (public.is_shared_with_me(owner));
+  using (public.can_view_shift(owner, person));
 
 -- Shares: owners manage their own share list.
 drop policy if exists "owner manages own shares" on public.shares;
@@ -109,5 +140,5 @@ create policy "shared viewers read profile" on public.profiles
 -- Nobody who is signed out can touch any of this.
 revoke all on public.shifts, public.shares, public.profiles from anon;
 grant select, insert, update, delete on public.shifts, public.shares, public.profiles to authenticated;
-grant execute on function public.my_email(), public.is_shared_with_me(uuid) to authenticated;
-revoke execute on function public.is_shared_with_me(uuid) from anon, public;
+grant execute on function public.my_email(), public.same_person(text), public.is_shared_with_me(uuid), public.can_view_shift(uuid, text) to authenticated;
+revoke execute on function public.is_shared_with_me(uuid), public.can_view_shift(uuid, text) from anon, public;
