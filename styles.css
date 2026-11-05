@@ -188,6 +188,13 @@ textarea { resize: vertical; min-height: 64px; }
 .bycg { display: flex; flex-direction: column; gap: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
 .bycg-row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .bycg-row .num { font-weight: 700; }
+.collapse { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%;
+  background: none; border: 0; padding: 4px 0; margin: 0; text-align: left; color: var(--ink); min-height: 44px; }
+.collapse .chev { width: 10px; height: 10px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform 0.15s; margin-right: 6px; }
+.collapse[aria-expanded="false"] .chev { transform: rotate(-45deg); }
+@media (prefers-reduced-motion: reduce) { .collapse .chev { transition: none; } }
+.syncbody { display: flex; flex-direction: column; gap: 14px; }
+.patientpick select { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; width: 100%; }
 .divider { border: 0; border-top: 1px solid var(--line); margin: 0; width: 100%; }
 .ok-msg { color: var(--accent); font-size: 0.92rem; }
 input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem; }

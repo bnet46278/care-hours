@@ -30,6 +30,8 @@ let shares = [];             // [{email, person}]: who sees which of my patients
 let profile = { display_name: "" };
 let shareUi = { err: "", ok: "", confirm: null, busy: false, savedName: false, person: "", email: "" };
 let signoutConfirm = false;
+let myPatient = "all";       // caregiver's patient filter on Shifts and Schedule: "all", or a patient (samePerson form)
+let syncOpen = true;          // Sync & sharing card open or collapsed; remembered on this device
 
 // patients other caregivers shared with me
 let sharedPairs = [];        // [{owner, person}] exactly as shared
@@ -43,6 +45,7 @@ let sharedErr = "";
 const LS_KEY = "care-hours-shifts-v1";
 const LS_OWNER = "care-hours-synced-owner";
 const LS_SCHED = "care-hours-schedule-v1";
+const LS_SYNC_OPEN = "care-hours-sync-open";
 
 // Your patients, spelled the way you most recently entered them.
 function patients() {
@@ -63,7 +66,7 @@ const mine = () => shifts.filter(s => !s.deleted);
 const active = () => mine().filter(s => !s.end).sort((a, b) => b.start - a.start)[0];
 const data = () => view === "all" ? sharedAll
   : view === "shared" ? sharedAll.filter(s => sharedCaregiver === "all" || s.owner === sharedCaregiver)
-  : mine();
+  : mine().filter(forMyPatient);
 const readOnly = () => view === "all" || view === "shared";
 // A payer is someone with shared patients who doesn't record shifts of their own.
 const payerMode = () => !!me && sharedPatients.length > 0 && mine().length === 0 && liveSched().length === 0;
@@ -77,4 +80,7 @@ const patientName = s => {
 // Caregivers who share with you, by name, and the patients each one shares.
 const sharedCaregivers = () => [...new Set(sharedPairs.map(r => r.owner))].sort((a, b) => cgName(a).localeCompare(cgName(b)));
 const patientsOf = id => sharedPatients.filter(g => g.caregivers.includes(id)).map(g => g.person);
+// The caregiver's patient filter. Time off isn't for one patient, so it always shows.
+const forMyPatient = x => myPatient === "all" || x.kind === "off" || samePerson(x.person) === myPatient;
+const myPatientName = () => patients().find(p => samePerson(p) === myPatient) || myPatient;
 const cgName = id => (caregiverNames[id] && caregiverNames[id].name) || "A caregiver";

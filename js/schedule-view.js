@@ -51,12 +51,12 @@ function renderPlan() {
   if (view !== "plan") return;
   const now = Date.now();
   const days = scheduleDays(false);
-  const weekly = liveSched().filter(e => e.kind === "weekly").sort((a, b) => a.person.localeCompare(b.person) || a.startTime.localeCompare(b.startTime));
+  const weekly = liveSched().filter(e => e.kind === "weekly" && forMyPatient(e)).sort((a, b) => a.person.localeCompare(b.person) || a.startTime.localeCompare(b.startTime));
   const offs = liveSched().filter(e => e.kind === "off").map(e => ({ e, o: occurrences([{ ...e, owner: "me" }], 0, 8.64e15)[0] }))
     .filter(x => x.o && x.o.end > now).sort((a, b) => a.o.start - b.o.start);
   const rangeTxt = e => `${timeLabel(e.startTime)} – ${timeLabel(e.endTime)}`;
   $("planList").innerHTML = `
-    ${days || `<div class="empty">Nothing scheduled this week. Add a <b>repeating shift</b> for regular visits, a <b>one-time shift</b>, or <b>time off</b>.</div>`}
+    ${days || (myPatient !== "all" ? `<div class="empty">Nothing scheduled for ${esc(myPatientName())} this week.</div>` : "") || `<div class="empty">Nothing scheduled this week. Add a <b>repeating shift</b> for regular visits, a <b>one-time shift</b>, or <b>time off</b>.</div>`}
     <div class="field"><h2>Repeating shifts</h2>
       ${weekly.length ? `<ul class="rules">${weekly.map(e => `<li><span><b>${esc(e.person)}</b> · ${esc(daysLabel(e.days))}</span>
         <span class="acts"><button class="link" data-pact="edit" data-id="${esc(e.id)}">Edit</button><button class="link danger" data-pact="del" data-id="${esc(e.id)}">Delete</button></span>

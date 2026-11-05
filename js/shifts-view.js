@@ -117,6 +117,7 @@ function renderList() {
   if (!inWeek.length) {
     list.innerHTML = `<div class="empty">${readOnly()
       ? (sharedErr ? esc(sharedErr) : "No shifts recorded this week.")
+      : myPatient !== "all" ? `No shifts for ${esc(myPatientName())} this week.`
       : weekOffset === 0
         ? "No shifts yet this week. Tap <b>Clock in</b> when you start, or add a shift you forgot to record."
         : "No shifts recorded this week."}</div>`;
@@ -241,7 +242,7 @@ $("csvBtn").addEventListener("click", () => {
     lines.push([`Total for ${cgName(id)}`, "", "", h.toFixed(2), "", cgName(id), ""]);
   lines.push(ro ? ["Total", "", "", total.toFixed(2), "", "", ""] : ["Total", "", "", total.toFixed(2), "", ""]);
   const csv = lines.map(r => r.map(csvCell).join(",")).join("\r\n");
-  const who = view === "all" ? "shared" : view === "shared" ? (sharedCaregiver === "all" ? "all-caregivers" : cgName(sharedCaregiver)) : "";
+  const who = view === "all" ? "shared" : view === "shared" ? (sharedCaregiver === "all" ? "all-caregivers" : cgName(sharedCaregiver)) : myPatient !== "all" ? myPatientName() : "";
   const slug = who ? who.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" : "";
   const blob = new Blob([csv], { type: "text/csv" });
   const a = document.createElement("a");

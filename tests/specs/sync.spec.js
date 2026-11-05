@@ -61,6 +61,26 @@ test.describe("Sign in and sync", () => {
     expect(db.rows("shifts")).toHaveLength(1);
   });
 
+  test("the Sync & sharing section collapses, and stays that way", async ({ openApp }) => {
+    const app = await openApp();
+    await app.signIn("cynda@example.com");
+    await app.waitSynced();
+    const toggle = app.page.getByRole("button", { name: "Sync & sharing" });
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");   // open the first time
+    await expect(app.$("#shareForm")).toBeVisible();
+
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await expect(app.$("#shareForm")).toBeHidden();
+    await expect(app.$("#signOut")).toBeHidden();
+    await expect(app.$("#syncState")).toContainText("All shifts saved online");   // status still shows
+
+    await app.reload();
+    await expect(app.page.getByRole("button", { name: "Sync & sharing" })).toHaveAttribute("aria-expanded", "false");
+    await app.page.getByRole("button", { name: "Sync & sharing" }).click();
+    await expect(app.$("#shareForm")).toBeVisible();
+  });
+
   test("signing out removes shifts from the device but keeps them online", async ({ openApp, db }) => {
     const app = await openApp();
     await app.signIn("cynda@example.com");

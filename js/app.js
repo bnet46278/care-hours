@@ -22,6 +22,12 @@ function renderTabs() {
   const log = $("logSection"), ps = $("planShared");
   if (view === "all") { if (log.nextElementSibling !== ps) log.after(ps); }
   else if (ps.nextElementSibling !== log) log.before(ps);
+  // Caregiver's patient picker on Shifts and Schedule.
+  const pats = patients();
+  if (myPatient !== "all" && !pats.some(p => samePerson(p) === myPatient)) myPatient = "all";
+  $("myPatientWrap").hidden = ro || !pats.length;
+  $("myPatient").innerHTML = `<option value="all"${myPatient === "all" ? " selected" : ""}>All patients</option>` +
+    pats.map(p => `<option value="${esc(samePerson(p))}"${samePerson(p) === myPatient ? " selected" : ""}>${esc(p)}</option>`).join("");
   if (!ro) return;
   const names = ids => ids.map(cgName).join(", ");
   if (view === "all") {
@@ -48,6 +54,7 @@ $("tabMine").addEventListener("click", () => { view = payerMode() ? "all" : "min
 $("tabPlan").addEventListener("click", () => { view = "plan"; weekOffset = 0; closeForm(); renderAll(); });
 $("tabShared").addEventListener("click", () => { view = "shared"; weekOffset = 0; closeForm(); closePlanForm(); renderAll(); refreshShared(); });
 $("ownerPick").addEventListener("change", e => { sharedCaregiver = e.target.value; renderAll(); });
+$("myPatient").addEventListener("change", e => { myPatient = e.target.value; confirmId = null; planConfirm = null; renderAll(); });
 $("sharedRefresh").addEventListener("click", refreshShared);
 
 // ================= top-level render =================
@@ -75,6 +82,7 @@ setInterval(() => {
 
 // ================= start =================
 shifts = loadLocal();
+syncOpen = getLS(LS_SYNC_OPEN) !== "0";   // open until you collapse it
 sched = loadSched();
 const standalone = window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
 $("installTip").hidden = standalone;

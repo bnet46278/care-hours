@@ -115,6 +115,8 @@ class CareHours {
     await this.$("#sharePerson").fill(patient);
     await this.$("#shareEmail").fill(email);
     await this.$("#shareForm button[type=submit]").click();
+    // Wait for the app's answer, so the share is saved before the next step (or the error is showing).
+    await expect(this.$("#shareForm .ok-msg, #shareForm .err").filter({ hasText: /\S/ })).toHaveCount(1);
   }
 
   // ---------- schedule ----------

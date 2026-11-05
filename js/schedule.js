@@ -43,5 +43,5 @@ function viewSched() {
   if (view === "shared") {
     return sharedSched.filter(e => sharedCaregiver === "all" || e.owner === sharedCaregiver);
   }
-  return liveSched().map(e => ({ ...e, owner: "me" }));
+  return liveSched().filter(forMyPatient).map(e => ({ ...e, owner: "me" }));
 }

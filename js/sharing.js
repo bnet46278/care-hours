@@ -178,13 +178,15 @@ function renderSync() {
   } else {
     const unsynced = allLocal().filter(s => s.dirty).length;
     el.innerHTML = `
-      <div class="rowline"><h2>Sync &amp; sharing</h2><button class="link" id="signOut">Sign out</button></div>
+      <button type="button" class="collapse" id="syncToggle" aria-expanded="${syncOpen}" aria-controls="syncBody">
+        <h2>Sync &amp; sharing</h2><span class="chev" aria-hidden="true"></span></button>
+      <div class="syncstate" id="syncState"></div>
+      <div class="syncbody" id="syncBody"${syncOpen ? "" : " hidden"}>
+      <div class="rowline"><p class="muted">Signed in as <b>${esc(me.email)}</b></p><button class="link" id="signOut">Sign out</button></div>
       ${signoutConfirm ? `<div class="confirm"><span>${unsynced
         ? `${unsynced} change${unsynced === 1 ? " hasn't" : "s haven't"} uploaded yet and will be lost if you sign out now.`
         : "Signing out removes your shifts from this device. They stay safe in your online account."}</span>
         <button class="link danger" id="signOutYes">Sign out</button><button class="link" id="signOutNo">Stay signed in</button></div>` : ""}
-      <p class="muted">Signed in as <b>${esc(me.email)}</b></p>
-      <div class="syncstate" id="syncState"></div>
       <hr class="divider">
       <form id="nameForm" class="field" novalidate>
         <label class="label" for="dispName">Your name, as the people you share with see it</label>
@@ -212,8 +214,13 @@ function renderSync() {
         <div class="err" role="alert">${esc(shareUi.err)}</div>
         <div class="ok-msg">${esc(shareUi.ok || "")}</div>
         <p class="hint">They sign in to Care Hours with that email and see only that patient's shifts, including notes. They can't change anything, and you can remove them any time.</p>
-      </form>`;
+      </form>
+      </div>`;
     renderSyncState();
+    $("syncToggle").addEventListener("click", () => {
+      syncOpen = !syncOpen; setLS(LS_SYNC_OPEN, syncOpen ? "1" : "0");
+      $("syncBody").hidden = !syncOpen; $("syncToggle").setAttribute("aria-expanded", String(syncOpen));
+    });
     $("signOut").addEventListener("click", () => { signoutConfirm = true; renderSync(); });
     if (signoutConfirm) {
       $("signOutNo").addEventListener("click", () => { signoutConfirm = false; renderSync(); });
