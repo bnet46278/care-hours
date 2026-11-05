@@ -126,6 +126,10 @@ test.describe("Sharing with payers", () => {
     await payer.signIn("payer@example.com");
     await expect(payer.$("#list")).not.toContainText("Mom");
     await expect(payer.weekTotal()).toHaveText("3h 00m");   // only Dad is left
+    // With one caregiver left, the picker still shows.
+    await payer.tab("Caregivers");
+    await expect(payer.$("#ownerPick")).toBeVisible();
+    await expect(payer.$("#ownerPick option")).toHaveText(["All caregivers", "Ann L."]);
   });
 
   test("the database refuses a payer who tries to change shifts", async ({ openApp, db }) => {

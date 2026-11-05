@@ -33,7 +33,7 @@ function renderTabs() {
     // Pick one caregiver, or all of them.
     const cgs = sharedCaregivers();
     $("sharedLabel").textContent = "Caregivers who share with you";
-    $("ownerPickWrap").hidden = cgs.length < 2;
+    $("ownerPickWrap").hidden = cgs.length === 0;
     $("ownerPick").innerHTML = `<option value="all"${sharedCaregiver === "all" ? " selected" : ""}>All caregivers</option>` +
       cgs.map(id => `<option value="${esc(id)}"${id === sharedCaregiver ? " selected" : ""}>${esc(cgName(id))}</option>`).join("");
     const one = sharedCaregiver !== "all" ? sharedCaregiver : cgs.length === 1 ? cgs[0] : null;

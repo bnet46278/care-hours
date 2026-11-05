@@ -1,6 +1,6 @@
 // Lets Care Hours open without an internet connection.
 // Bump VERSION whenever you change any file, so phones pick up the new version.
-const VERSION = "care-hours-v12";
+const VERSION = "care-hours-v13";
 const FILES = [
   "./", "index.html", "styles.css", "config.js", "manifest.json", "icon-192.png", "icon-512.png", "apple-touch-icon.png",
   // App code. If you add a file to js/, list it here too.
@@ -31,7 +31,8 @@ self.addEventListener("fetch", event => {
   if (!sameSite && !CACHE_HOSTS.includes(url.hostname)) return;
   // Network first, so updates show up; fall back to the saved copy when offline.
   event.respondWith(
-    fetch(req)
+    // For the app's own files, always ask GitHub whether there's a newer copy (no stale browser cache after an update).
+    fetch(sameSite ? new Request(req, { cache: "no-cache" }) : req)
       .then(res => {
         if (res.ok || res.type === "opaque") {
           const copy = res.clone();
