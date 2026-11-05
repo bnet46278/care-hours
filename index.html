@@ -36,6 +36,9 @@
     <select id="ownerPick"></select>
   </div>
 
+  <!-- Hours for the week shown: by patient for caregivers, by caregiver for payers -->
+  <div class="bycg" id="byCaregiver" hidden></div>
+
   <div class="tabs" id="tabs" role="tablist" hidden>
     <button role="tab" id="tabMine" aria-selected="true">Shifts</button>
     <button role="tab" id="tabPlan" aria-selected="false">Schedule</button>
@@ -68,11 +71,10 @@
     <div class="total"><b class="num" id="weekTotal">0h</b><span id="weekDecimal">0.00 hours</span></div>
     <div class="vs" id="weekVs" hidden></div>
     <div class="bars" id="bars"></div>
-    <div class="bycg" id="byCaregiver" hidden></div>
     <div class="daydetail" id="dayDetail" hidden></div>
   </section>
 
-  <section class="plan" id="plan" hidden>
+  <section class="plan listcard" id="plan" hidden>
     <div class="loghead">
       <button type="button" class="collapse inline" id="planToggle" aria-expanded="true" aria-controls="planList"><h2>Schedule</h2><span class="chev" aria-hidden="true"></span></button>
       <div class="tools">
@@ -85,9 +87,9 @@
     <div id="planList"></div>
   </section>
 
-  <section class="plan" id="planShared" hidden></section>
+  <section class="plan listcard" id="planShared" hidden></section>
 
-  <section class="log" id="logSection">
+  <section class="log listcard" id="logSection">
     <div class="loghead">
       <button type="button" class="collapse inline" id="listToggle" aria-expanded="true" aria-controls="list"><h2>Shifts</h2><span class="chev" aria-hidden="true"></span></button>
       <div class="tools">

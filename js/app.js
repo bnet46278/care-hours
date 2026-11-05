@@ -3,56 +3,44 @@
 
 // ================= render: tabs & shared header =================
 function renderTabs() {
-  // Caregivers: Shifts | Schedule (| Caregivers, if someone shares with them). Payers: Shifts | Caregivers.
+  // Caregivers: Shifts | Schedule (| Caregivers, if someone shares hours with them).
+  // Payers: Shifts | Schedule, both showing what caregivers share with them.
   const payer = payerMode(), hasShared = !!me && sharedPatients.length > 0;
   $("tabs").hidden = false;
-  $("tabPlan").hidden = payer;
-  $("tabShared").hidden = !hasShared;
+  $("tabShared").hidden = payer || !hasShared;
   $("tabMine").setAttribute("aria-selected", String(view === "mine" || view === "all"));
-  $("tabPlan").setAttribute("aria-selected", String(view === "plan"));
+  $("tabPlan").setAttribute("aria-selected", String(view === "plan" || view === "pplan"));
   $("tabShared").setAttribute("aria-selected", String(view === "shared"));
-  const ro = readOnly(), plan = view === "plan";
+  const ro = readOnly(), plan = view === "plan", schedTab = plan || view === "pplan";
   $("sharedHead").hidden = !ro;
-  $("ownerPickWrap").hidden = true;   // shown below on the Caregivers tab
   $("clock").hidden = ro || plan;
   $("addBtn").hidden = ro;
   $("plan").hidden = !plan;
-  $("planShared").hidden = !ro;
-  $("logSection").hidden = plan;
-  // Payer's Shifts tab: the shifts list comes first, then the schedule. Elsewhere the schedule comes first.
-  const log = $("logSection"), ps = $("planShared");
-  if (view === "all") { if (log.nextElementSibling !== ps) log.after(ps); }
-  else if (ps.nextElementSibling !== log) log.before(ps);
-  // Caregiver's patient picker on Shifts and Schedule.
+  $("planShared").hidden = !(view === "pplan" || view === "shared");
+  $("logSection").hidden = schedTab;
+  // Caregiver's patient picker.
   const pats = patients();
   if (myPatient !== "all" && !pats.some(p => samePerson(p) === myPatient)) myPatient = "all";
   $("myPatientWrap").hidden = ro || !pats.length;
   $("myPatient").innerHTML = `<option value="all"${myPatient === "all" ? " selected" : ""}>All patients</option>` +
     pats.map(p => `<option value="${esc(samePerson(p))}"${samePerson(p) === myPatient ? " selected" : ""}>${esc(p)}</option>`).join("");
+  // Payer's caregiver picker, at the top on every payer tab.
+  const cgs = sharedCaregivers();
+  if (sharedCaregiver !== "all" && !cgs.includes(sharedCaregiver)) sharedCaregiver = "all";
+  $("ownerPickWrap").hidden = !ro || !cgs.length;
   if (!ro) return;
-  const names = ids => ids.map(cgName).join(", ");
-  if (view === "all") {
-    $("sharedLabel").textContent = "Shifts shared with you";
-    $("ownerPickWrap").hidden = true;
-    $("sharedWho").innerHTML = `<h2>All shared shifts</h2>` + sharedPatients.map(g =>
-      `<p class="hint"><b>${esc(g.person)}</b> · cared for by ${esc(names(g.caregivers))}</p>`).join("");
-  } else {
-    // Pick one caregiver, or all of them.
-    const cgs = sharedCaregivers();
-    $("sharedLabel").textContent = "Caregivers who share with you";
-    $("ownerPickWrap").hidden = cgs.length === 0;
-    $("ownerPick").innerHTML = `<option value="all"${sharedCaregiver === "all" ? " selected" : ""}>All caregivers</option>` +
-      cgs.map(id => `<option value="${esc(id)}"${id === sharedCaregiver ? " selected" : ""}>${esc(cgName(id))}</option>`).join("");
-    const one = sharedCaregiver !== "all" ? sharedCaregiver : cgs.length === 1 ? cgs[0] : null;
-    const email = id => caregiverNames[id] && caregiverNames[id].email && caregiverNames[id].email !== cgName(id) ? " · " + caregiverNames[id].email : "";
-    $("sharedWho").innerHTML = one
-      ? `<h2>${esc(cgName(one))}</h2><p class="hint">Caring for ${esc(patientsOf(one).join(", "))}${esc(email(one))}</p>`
-      : `<h2>All caregivers</h2>` + cgs.map(id => `<p class="hint${cc(id)}"><span class="dot"></span><b>${esc(cgName(id))}</b> · caring for ${esc(patientsOf(id).join(", "))}</p>`).join("");
-  }
+  $("ownerPick").innerHTML = `<option value="all"${sharedCaregiver === "all" ? " selected" : ""}>All caregivers</option>` +
+    cgs.map(id => `<option value="${esc(id)}"${id === sharedCaregiver ? " selected" : ""}>${esc(cgName(id))}</option>`).join("");
+  $("sharedLabel").textContent = "Caregivers who share with you";
+  const one = sharedCaregiver !== "all" ? sharedCaregiver : cgs.length === 1 ? cgs[0] : null;
+  const email = id => caregiverNames[id] && caregiverNames[id].email && caregiverNames[id].email !== cgName(id) ? " · " + caregiverNames[id].email : "";
+  $("sharedWho").innerHTML = one
+    ? `<h2 class="${cc(one).trim()}"><span class="dot"></span>${esc(cgName(one))}</h2><p class="hint">Caring for ${esc(patientsOf(one).join(", "))}${esc(email(one))}</p>`
+    : `<h2>All caregivers</h2>` + cgs.map(id => `<p class="hint${cc(id)}"><span class="dot"></span><b>${esc(cgName(id))}</b> · caring for ${esc(patientsOf(id).join(", "))}</p>`).join("");
   $("sharedUpdated").textContent = sharedErr || (sharedLoadedAt ? "Updated " + tFmt.format(new Date(sharedLoadedAt)) : "");
 }
 $("tabMine").addEventListener("click", () => { view = payerMode() ? "all" : "mine"; weekOffset = 0; closeForm(); closePlanForm(); renderAll(); if (view === "all") refreshShared(); });
-$("tabPlan").addEventListener("click", () => { view = "plan"; weekOffset = 0; closeForm(); renderAll(); });
+$("tabPlan").addEventListener("click", () => { view = payerMode() ? "pplan" : "plan"; weekOffset = 0; closeForm(); renderAll(); if (view === "pplan") refreshShared(); });
 $("tabShared").addEventListener("click", () => { view = "shared"; weekOffset = 0; closeForm(); closePlanForm(); renderAll(); refreshShared(); });
 $("ownerPick").addEventListener("change", e => { sharedCaregiver = e.target.value; renderAll(); });
 // ---------- collapsible Shifts and Schedule lists ----------
@@ -96,8 +84,9 @@ setInterval(() => {
 // ================= start =================
 shifts = loadLocal();
 syncOpen = getLS(LS_SYNC_OPEN) !== "0";   // open until you collapse it
-listOpen = getLS(LS_LIST_OPEN) !== "0";
-schedOpen = getLS(LS_SCHED_OPEN) !== "0";
+// The Shifts and Schedule cards start collapsed; once you open one, it stays open on this device.
+listOpen = getLS(LS_LIST_OPEN) === "1";
+schedOpen = getLS(LS_SCHED_OPEN) === "1";
 applyCollapsed();
 sched = loadSched();
 const standalone = window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;

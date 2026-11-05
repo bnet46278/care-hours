@@ -69,7 +69,7 @@ function renderWeek() {
   const days = [...Array(7)].map((_, i) => addDays(ws, i));
   const wsMs = ws.getTime(), weMs = addDays(ws, 7).getTime();
   const occ = occurrences(viewSched(), wsMs, weMs);
-  const plan = view === "plan";
+  const plan = view === "plan" || view === "pplan";   // Schedule tabs chart scheduled hours
   // The Schedule tab charts scheduled hours; the other tabs chart hours worked.
   const schedByDay = days.map(d => schedHours(occ.filter(o => sameDay(new Date(o.start), d))));
   const totals = plan ? schedByDay : days.map(msInDay);
@@ -207,7 +207,7 @@ function renderDayDetail() {
     else if (x.kind !== "off") note(samePerson(x.person), x.person, pc(x.person));
   }
   if (!who.size && !ro && myPatient !== "all") note(myPatient, myPatientName(), pc(myPatientName()));
-  if (!who.size && ro && view === "shared" && sharedCaregiver !== "all") note(sharedCaregiver, cgName(sharedCaregiver), cc(sharedCaregiver));
+  if (!who.size && ro && sharedCaregiver !== "all") note(sharedCaregiver, cgName(sharedCaregiver), cc(sharedCaregiver));
   const names = [...who.values()].sort((a, b) => a.name.localeCompare(b.name))
     .map(w => `<span class="who${w.cls}"><span class="dot"></span>${esc(w.name)}</span>`).join("");
   el.hidden = false;
@@ -329,7 +329,7 @@ $("csvBtn").addEventListener("click", () => {
     lines.push([`Total for ${cgName(id)}`, "", "", h.toFixed(2), "", cgName(id), ""]);
   lines.push(ro ? ["Total", "", "", total.toFixed(2), "", "", ""] : ["Total", "", "", total.toFixed(2), "", ""]);
   const csv = lines.map(r => r.map(csvCell).join(",")).join("\r\n");
-  const who = view === "all" ? "shared" : view === "shared" ? (sharedCaregiver === "all" ? "all-caregivers" : cgName(sharedCaregiver)) : myPatient !== "all" ? myPatientName() : "";
+  const who = readOnly() ? (sharedCaregiver === "all" ? "shared" : cgName(sharedCaregiver)) : myPatient !== "all" ? myPatientName() : "";
   const slug = who ? who.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" : "";
   const blob = new Blob([csv], { type: "text/csv" });
   const a = document.createElement("a");

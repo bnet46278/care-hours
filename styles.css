@@ -218,6 +218,11 @@ button.day[aria-pressed="true"] { background: var(--surface); box-shadow: 0 0 0 
 .bycg-row .num { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; margin-left: auto; text-align: right; white-space: nowrap; }
 .collapse { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%;
   background: none; border: 0; padding: 4px 0; margin: 0; text-align: left; color: var(--ink); min-height: 44px; }
+/* Shifts and Schedule cards */
+.listcard { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; }
+.listcard .loghead { min-height: 44px; }
+.listcard .empty { background: var(--bg); }
+.listcard .grouphead { border-bottom-color: var(--line); }
 .collapse.inline { width: auto; justify-content: flex-start; gap: 10px; padding: 0; }
 .collapse h2 { margin: 0; }
 .collapse .chev { width: 10px; height: 10px; border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted); transform: rotate(45deg); transition: transform 0.15s; margin-right: 6px; }

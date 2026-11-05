@@ -33,8 +33,8 @@ let signoutConfirm = false;
 let selDay = null;           // day opened from the week chart ("YYYY-MM-DD")
 let myPatient = "all";       // caregiver's patient filter on Shifts and Schedule: "all", or a patient (samePerson form)
 let syncOpen = true;
-let listOpen = true;          // Shifts list open or collapsed (remembered on this device)
-let schedOpen = true;         // Schedule list open or collapsed (remembered on this device)          // Sync & sharing card open or collapsed; remembered on this device
+let listOpen = false;         // Shifts card open or collapsed (starts collapsed; remembered on this device)
+let schedOpen = false;        // Schedule card open or collapsed (starts collapsed; remembered on this device)          // Sync & sharing card open or collapsed; remembered on this device
 
 // patients other caregivers shared with me
 let sharedPairs = [];        // [{owner, person}] exactly as shared
@@ -71,10 +71,10 @@ function matchPatient(name) {
 
 const mine = () => shifts.filter(s => !s.deleted);
 const active = () => mine().filter(s => !s.end).sort((a, b) => b.start - a.start)[0];
-const data = () => view === "all" ? sharedAll
-  : view === "shared" ? sharedAll.filter(s => sharedCaregiver === "all" || s.owner === sharedCaregiver)
+// Payer views ("all" = payer's Shifts, "pplan" = payer's Schedule, "shared" = Caregivers tab) follow the caregiver picker.
+const data = () => readOnly() ? sharedAll.filter(s => sharedCaregiver === "all" || s.owner === sharedCaregiver)
   : mine().filter(forMyPatient);
-const readOnly = () => view === "all" || view === "shared";
+const readOnly = () => view === "all" || view === "pplan" || view === "shared";
 // A payer is someone with shared patients who doesn't record shifts of their own.
 const payerMode = () => !!me && sharedPatients.length > 0 && mine().length === 0 && liveSched().length === 0;
 // On the payer side, show each patient's name one way, whoever typed it.

@@ -38,6 +38,7 @@ async function loadSharedWithMe() {
   // Only leave a shared view that has nothing left; never move someone off the tab they chose.
   if (!sharedPatients.length && readOnly()) view = "mine";
   else if (payerMode() && view === "mine") view = "all";   // payers land on all their shared shifts
+  else if (payerMode() && view === "plan") view = "pplan";
   await loadSharedShifts();
   renderAll();
 }
