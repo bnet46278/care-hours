@@ -1,0 +1,15 @@
+{
+  "name": "care-hours-tests",
+  "private": true,
+  "description": "Automated tests for Care Hours. They run the app in a real browser against a fake online database, so your real data is never touched.",
+  "scripts": {
+    "test": "playwright test --project=chromium",
+    "test:iphone": "playwright test --project=iphone",
+    "test:all": "playwright test",
+    "test:ui": "playwright test --project=chromium --ui",
+    "report": "playwright show-report"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0"
+  }
+}

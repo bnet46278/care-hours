@@ -10,6 +10,9 @@
 --     never change them. Shifts with no patient name are never shared.
 --   * Everyone else sees nothing.
 --
+-- Version 3 adds the schedule (repeating shifts, one-time shifts and time off).
+-- Payers see scheduled shifts for their patient, and see a caregiver's time off only as "unavailable".
+--
 -- Version 2 (per-patient sharing). If you ran the first version, run this whole file again.
 -- Shares made with the first version covered all of a caregiver's hours, so they are removed;
 -- share again, picking the patient.
@@ -56,6 +59,32 @@ create table if not exists public.profiles (
 
 create index if not exists shares_viewer_email_idx on public.shares (viewer_email);
 
+-- The schedule: what a caregiver plans to work, and when they can't.
+--   weekly: repeats on the given weekdays (0 = Sunday ... 6 = Saturday) from on_date, until until_date if set
+--   once:   one shift on on_date
+--   off:    time off from on_date (at start_time, or all day) to until_date (at end_time, or end of day)
+-- Times are local wall-clock times. A shift whose end_time is earlier than its start_time ends the next day.
+create table if not exists public.schedule (
+  owner       uuid        not null default auth.uid() references auth.users (id) on delete cascade,
+  id          text        not null check (char_length(id) between 1 and 64),
+  kind        text        not null check (kind in ('weekly', 'once', 'off')),
+  person      text        not null default '' check (char_length(person) <= 200),
+  days        smallint[]  not null default '{}',
+  on_date     date        not null,
+  until_date  date,
+  start_time  time,
+  end_time    time,
+  note        text        not null default '' check (char_length(note) <= 2000),
+  deleted     boolean     not null default false,
+  updated_at  timestamptz not null default now(),
+  primary key (owner, id),
+  -- Shifts need a patient and times; time off has no patient and no note (payers see it as "unavailable").
+  check (deleted or (kind = 'off' and person = '' and note = '')
+                 or (kind <> 'off' and char_length(btrim(person)) > 0 and start_time is not null and end_time is not null)),
+  check (deleted or kind <> 'weekly' or (cardinality(days) between 1 and 7 and days <@ array[0,1,2,3,4,5,6]::smallint[])),
+  check (until_date is null or until_date >= on_date)
+);
+
 -- ---------- Helper ----------
 
 -- The signed-in person's email, lowercased. Supabase only issues a session after the
@@ -94,6 +123,7 @@ $$;
 
 -- ---------- Access rules (row level security) ----------
 
+alter table public.schedule enable row level security;
 alter table public.shifts   enable row level security;
 alter table public.shares   enable row level security;
 alter table public.profiles enable row level security;
@@ -137,8 +167,24 @@ create policy "shared viewers read profile" on public.profiles
   for select to authenticated
   using (public.is_shared_with_me(id));
 
+-- Schedule: owners do everything with their own entries.
+drop policy if exists "owner manages own schedule" on public.schedule;
+create policy "owner manages own schedule" on public.schedule
+  for all to authenticated
+  using (owner = auth.uid())
+  with check (owner = auth.uid());
+
+-- Schedule: payers read scheduled shifts for patients shared with them, and the caregiver's time off.
+drop policy if exists "shared viewers read schedule" on public.schedule;
+create policy "shared viewers read schedule" on public.schedule
+  for select to authenticated
+  using (
+    (kind <> 'off' and public.can_view_shift(owner, person))
+    or (kind = 'off' and public.is_shared_with_me(owner))
+  );
+
 -- Nobody who is signed out can touch any of this.
-revoke all on public.shifts, public.shares, public.profiles from anon;
-grant select, insert, update, delete on public.shifts, public.shares, public.profiles to authenticated;
+revoke all on public.shifts, public.shares, public.profiles, public.schedule from anon;
+grant select, insert, update, delete on public.shifts, public.shares, public.profiles, public.schedule to authenticated;
 grant execute on function public.my_email(), public.same_person(text), public.is_shared_with_me(uuid), public.can_view_shift(uuid, text) to authenticated;
 revoke execute on function public.is_shared_with_me(uuid), public.can_view_shift(uuid, text) from anon, public;

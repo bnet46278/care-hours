@@ -1,6 +1,6 @@
 # Care Hours
 
-A simple time clock for caregivers. Clock in and out, add missed shifts, see weekly hours, and download a timesheet (CSV).
+A simple time clock and schedule for caregivers. Clock in and out, add missed shifts, plan repeating shifts and time off, see scheduled vs worked hours, and download a timesheet (CSV).
 
 It works two ways:
 
@@ -11,11 +11,23 @@ It works two ways:
 
 | File | What it is |
 | --- | --- |
-| `index.html` | The whole app: screens, styles, and code |
+| `index.html` | The page layout. Loads everything else |
+| `styles.css` | Colors, fonts and spacing, with a dark theme |
+| `js/util.js` | Small helpers: dates, times, formatting |
+| `js/state.js` | What the app knows right now: shifts, schedule, who's signed in, which screen is showing |
+| `js/schedule.js` | Schedule math: turns repeating shifts and time off into real hours (no screen code) |
+| `js/storage.js` | Saving on the device and syncing with the online database |
+| `js/sharing.js` | Signing in, sharing patients, loading what's shared with you |
+| `js/shifts-view.js` | The Shifts screen: clock, week summary, shift list, CSV |
+| `js/schedule-view.js` | The Schedule screen and the schedule payers see |
+| `js/app.js` | Tabs, drawing the page, and starting the app (loaded last) |
 | `config.js` | Your Supabase project settings. Empty means online sync is off |
 | `setup.sql` | Creates the database tables and the access rules |
-| `sw.js` | Lets the app open without internet. Bump `VERSION` whenever you change a file |
+| `sw.js` | Lets the app open without internet. Bump `VERSION` whenever you change a file, and list any new file in `FILES` |
 | `manifest.json`, `*.png` | The home-screen name and icon |
+| `tests/` | Automated Playwright tests. See `tests/README.md` |
+
+The scripts are plain browser scripts with no build step. They share one set of names, so the order they're listed in `index.html` matters: helpers first, `app.js` last.
 
 ## Turning on online sync (one time, about 20 minutes)
 
@@ -39,6 +51,16 @@ It works two ways:
 2. Under **Share a patient**, enter the patient's name and the payer's email.
 3. They open the same site, sign in with that email, and see a **Shared with me** tab with only that patient's shifts. They can't change anything.
 
+## Tabs
+
+- **Caregivers:** **Shifts** (clock in and out, log missed shifts) and **Schedule** (repeating shifts, one-time shifts, time off).
+- **Payers:** **Shifts** (every shift shared with them, from all caregivers) and **Shared with me** (one patient at a time). Both show the schedule and scheduled vs worked hours. Payers can't change anything.
+- **Time off wins.** A scheduled shift during the caregiver's time off is skipped and doesn't count as scheduled. **Skip this day** on a repeating shift adds time off for just that shift. Payers see time off only as "unavailable".
+
+## Testing
+
+The `tests` folder has automated Playwright tests that use the app like a caregiver and a payer would, against a fake database (never your real one). See `tests/README.md` for setup. Short version: install Node.js, then in the `tests` folder run `npm install`, `npx playwright install chromium webkit`, and `npm test`.
+
 ## How the data is stored
 
 - Every change is saved on the device first, then uploaded. If there's no internet, changes wait and upload later.
@@ -52,4 +74,5 @@ It works two ways:
 
 If you change `setup.sql` (or pull a new version of it), run the whole file again in the Supabase SQL Editor. It's safe to run more than once.
 
+- **Version 3 (schedule):** adds the schedule table. Run the whole file again; nothing existing is changed.
 - **Version 2 (per-patient sharing):** shares made with version 1 covered all of a caregiver's hours. Running version 2 removes those shares, so share again by patient.
