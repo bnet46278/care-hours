@@ -30,9 +30,11 @@ let shares = [];             // [{email, person}]: who sees which of my patients
 let profile = { display_name: "" };
 let shareUi = { err: "", ok: "", confirm: null, busy: false, savedName: false, person: "", email: "" };
 let signoutConfirm = false;
-let selDay = null;           // day opened from the week chart ("YYYY-MM-DD"), caregiver screens only
+let selDay = null;           // day opened from the week chart ("YYYY-MM-DD")
 let myPatient = "all";       // caregiver's patient filter on Shifts and Schedule: "all", or a patient (samePerson form)
-let syncOpen = true;          // Sync & sharing card open or collapsed; remembered on this device
+let syncOpen = true;
+let listOpen = true;          // Shifts list open or collapsed (remembered on this device)
+let schedOpen = true;         // Schedule list open or collapsed (remembered on this device)          // Sync & sharing card open or collapsed; remembered on this device
 
 // patients other caregivers shared with me
 let sharedPairs = [];        // [{owner, person}] exactly as shared
@@ -47,7 +49,10 @@ const LS_KEY = "care-hours-shifts-v1";
 const LS_OWNER = "care-hours-synced-owner";
 const LS_SCHED = "care-hours-schedule-v1";
 const LS_SYNC_OPEN = "care-hours-sync-open";
+const LS_LIST_OPEN = "care-hours-list-open";
+const LS_SCHED_OPEN = "care-hours-sched-open";
 const LS_COLORS = "care-hours-patient-colors";
+const LS_CG_COLORS = "care-hours-caregiver-colors";
 
 // Your patients, spelled the way you most recently entered them.
 function patients() {
@@ -85,26 +90,36 @@ const patientsOf = id => sharedPatients.filter(g => g.caregivers.includes(id)).m
 // The caregiver's patient filter. Time off isn't for one patient, so it always shows.
 const forMyPatient = x => myPatient === "all" || x.kind === "off" || samePerson(x.person) === myPatient;
 const myPatientName = () => patients().find(p => samePerson(p) === myPatient) || myPatient;
-// ---------- patient colors (caregiver screens) ----------
-// Each patient keeps the same color on this device. New patients get the first unused color.
+// ---------- colors: patients on caregiver screens, caregivers on payer screens ----------
+// Each patient (or caregiver) keeps the same color on this device. Newcomers get the first unused color.
 const PALETTE = 8;
-let colorMap = null;
-function patientColor(name) {
-  const k = samePerson(name);
-  if (!k) return -1;
-  if (!colorMap) { try { colorMap = JSON.parse(getLS(LS_COLORS) || "{}") || {}; } catch (e) { colorMap = {}; } }
-  if (!(k in colorMap)) {
-    const used = new Set(Object.values(colorMap));
-    let i = 0;
-    while (used.has(i) && i < PALETTE) i++;
-    colorMap[k] = i < PALETTE ? i : Object.keys(colorMap).length % PALETTE;
-    setLS(LS_COLORS, JSON.stringify(colorMap));
-  }
-  return colorMap[k];
+function colorBook(lsKey) {
+  let map = null;
+  return key => {
+    if (!key) return -1;
+    if (!map) { try { map = JSON.parse(getLS(lsKey) || "{}") || {}; } catch (e) { map = {}; } }
+    if (!(key in map)) {
+      const used = new Set(Object.values(map));
+      let i = 0;
+      while (used.has(i) && i < PALETTE) i++;
+      map[key] = i < PALETTE ? i : Object.keys(map).length % PALETTE;
+      setLS(lsKey, JSON.stringify(map));
+    }
+    return map[key];
+  };
 }
-// Hand out colors alphabetically the first time, so devices with the same patients start out alike.
-const seedColors = () => [...patients()].sort((a, b) => a.localeCompare(b)).forEach(patientColor);
-const pc = name => { const i = patientColor(name); return i < 0 ? "" : ` pc${i}`; };
+const patientColorOf = colorBook(LS_COLORS);
+const caregiverColorOf = colorBook(LS_CG_COLORS);
+const patientColor = name => patientColorOf(samePerson(name));
+// Hand out colors alphabetically the first time, so devices with the same people start out alike.
+const seedColors = () => {
+  [...patients()].sort((a, b) => a.localeCompare(b)).forEach(patientColor);
+  sharedCaregivers().forEach(caregiverColorOf);
+};
+const pc = name => { const i = patientColor(name); return i < 0 ? "" : ` pc${i}`; };   // patient color class
+const cc = id => { const i = caregiverColorOf(id); return i < 0 ? "" : ` pc${i}`; };   // caregiver color class
+// The color for one shift or schedule entry: its caregiver for payers, its patient for caregivers.
+const tint = x => readOnly() ? cc(x.owner) : pc(x.person);
 const colorsOn = () => !readOnly();
 
 const cgName = id => (caregiverNames[id] && caregiverNames[id].name) || "A caregiver";

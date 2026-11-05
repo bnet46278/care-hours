@@ -88,13 +88,19 @@ function renderWeek() {
   vs.hidden = !(scheduled || (plan && worked));
   vs.innerHTML = plan ? `Worked: <b>${hrs(worked)}</b>` : `Scheduled: <b>${hrs(scheduled)}</b>`;
   const max = Math.max(8 * HOUR, ...totals);
-  const colored = colorsOn();
+  const colored = true;   // patients for caregivers, caregivers for payers
+  const ro = readOnly();
   // Hours per patient on day d: worked on Shifts, scheduled on Schedule.
   const parts = d => {
     const m = new Map();
-    const add = (p, ms) => { const k = samePerson(p); if (!m.has(k)) m.set(k, { name: p, ms: 0 }); m.get(k).ms += ms; };
-    if (plan) occ.forEach(o => { if (o.kind !== "off" && !o.cancelled && sameDay(new Date(o.start), d)) add(o.person, o.end - o.start); });
-    else data().forEach(s => { if (sameDay(new Date(s.start), d)) add(s.person, endOf(s) - s.start); });
+    // Group by patient on caregiver screens, by caregiver on payer screens.
+    const add = (x, ms) => {
+      const k = ro ? x.owner : samePerson(x.person), name = ro ? cgName(x.owner) : x.person;
+      if (!m.has(k)) m.set(k, { key: k, name, cls: tint(x), ms: 0 });
+      m.get(k).ms += ms;
+    };
+    if (plan) occ.forEach(o => { if (o.kind !== "off" && !o.cancelled && sameDay(new Date(o.start), d)) add(o, o.end - o.start); });
+    else data().forEach(s => { if (sameDay(new Date(s.start), d)) add(s, endOf(s) - s.start); });
     return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
   };
   const seen = new Map();
@@ -102,33 +108,38 @@ function renderWeek() {
     const pct = totals[i] ? Math.max(4, (totals[i] / max) * 100) : 0;
     const key = dateVal(d), label = `${dayFmt.format(d)}, ${totals[i] ? dur(totals[i]) : "nothing"} ${plan ? "scheduled" : "worked"}`;
     const fill = colored && totals[i]
-      ? `<div class="fill stack" style="height:${pct}%">${parts(d).map(p => { seen.set(samePerson(p.name), p.name); return `<div class="seg${pc(p.name)}" style="flex:${p.ms}"></div>`; }).join("")}</div>`
+      ? `<div class="fill stack" style="height:${pct}%">${parts(d).map(p => { seen.set(p.key, p); return `<div class="seg${p.cls}" style="flex:${p.ms}"></div>`; }).join("")}</div>`
       : `<div class="fill" style="height:${pct}%"></div>`;
     const inner = `<div class="track" title="${dur(totals[i])}">${fill}</div>
       <div class="dname">${wdFmt.format(d)}</div>
       <div class="dhrs">${totals[i] ? (totals[i] / HOUR).toFixed(1) : "–"}</div>`;
-    return colored
-      ? `<button type="button" class="day${sameDay(d, today) ? " is-today" : ""}" data-day="${key}" aria-pressed="${selDay === key}" aria-label="${esc(label)}. Show details">${inner}</button>`
-      : `<div class="day${sameDay(d, today) ? " is-today" : ""}">${inner}</div>`;
+    // Tap a day to open its details.
+    return `<button type="button" class="day${sameDay(d, today) ? " is-today" : ""}" data-day="${key}" aria-pressed="${selDay === key}" aria-label="${esc(label)}. Show details">${inner}</button>`;
   }).join("");
-  // Color key for the patients in this week's chart.
-  const lg = $("legend");
-  lg.hidden = !colored || !seen.size;
-  lg.innerHTML = [...seen.values()].sort((a, b) => a.localeCompare(b)).map(n => `<span class="${pc(n).trim()}"><span class="dot"></span>${esc(n)}</span>`).join("");
   renderDayDetail();
-  // Payers pay each caregiver, so show each caregiver's hours for the week, next to what was scheduled.
+  // Hours box under the chart: per caregiver for payers, per patient for caregivers.
+  // Each name has its color dot, so the box is also the chart's color key.
   const bc = $("byCaregiver");
-  bc.hidden = !readOnly();
-  if (readOnly()) {
-    const per = new Map(), sch = new Map();
-    for (const s of data()) if (s.start >= wsMs && s.start < weMs) per.set(s.owner, (per.get(s.owner) || 0) + (endOf(s) - s.start));
-    for (const o of occ) if (o.kind !== "off" && !o.cancelled) sch.set(o.owner, (sch.get(o.owner) || 0) + (o.end - o.start));
-    const ids = [...new Set([...per.keys(), ...sch.keys()])].sort((a, b) => cgName(a).localeCompare(cgName(b)));
-    bc.innerHTML = `<span class="label">Hours by caregiver</span>` + (ids.length
-      ? ids.map(id => `<div class="bycg-row"><span>${esc(cgName(id))}</span><span class="num">${hrs(per.get(id) || 0)}${sch.get(id) ? ` <span class="hint">of ${hrs(sch.get(id))} scheduled</span>` : ""}</span></div>`).join("")
-      : `<p class="hint">No hours this week.</p>`);
-  }
+  const ro2 = readOnly();
+  const keyOf = x => ro2 ? x.owner : samePerson(x.person);
+  const rows = new Map();
+  const row = x => {
+    const k = keyOf(x);
+    if (!rows.has(k)) rows.set(k, { name: ro2 ? cgName(x.owner) : (x.person || "No patient"), cls: tint(x), worked: 0, sched: 0 });
+    return rows.get(k);
+  };
+  for (const s of data()) if (s.start >= wsMs && s.start < weMs) row(s).worked += endOf(s) - s.start;
+  for (const o of occ) if (o.kind !== "off" && !o.cancelled) row(o).sched += o.end - o.start;
+  const list = [...rows.values()].sort((a, b) => a.name.localeCompare(b.name));
+  bc.hidden = !list.length && !ro2;
+  bc.innerHTML = `<span class="label">Hours by ${ro2 ? "caregiver" : "patient"}</span>` + (list.length
+    ? list.map(r => `<div class="bycg-item${r.cls}">
+        <div class="bycg-name"><span class="dot"></span>${esc(r.name)}</div>
+        <div class="bycg-row"><span>Worked</span><span class="num">${hrs(r.worked)}</span></div>
+        <div class="bycg-row"><span>Scheduled</span><span class="num">${hrs(r.sched)}</span></div></div>`).join("")
+    : `<p class="hint">No hours this week.</p>`);
 }
+
 
 // ================= render: list =================
 function renderList() {
@@ -162,27 +173,46 @@ function renderList() {
 function renderDayDetail() {
   const el = $("dayDetail");
   const ws = viewWeek(), we = addDays(ws, 7);
-  if (!colorsOn() || !selDay || parseDate(selDay) < ws || parseDate(selDay) >= we) { el.hidden = true; el.innerHTML = ""; return; }
+  if (!selDay || parseDate(selDay) < ws || parseDate(selDay) >= we) { el.hidden = true; el.innerHTML = ""; return; }
+  const ro = readOnly();
   const d = parseDate(selDay), ds = d.getTime(), de = addDays(d, 1).getTime();
   const worked = data().filter(s => sameDay(new Date(s.start), d)).sort((a, b) => a.start - b.start);
   const occ = occurrences(viewSched(), ds - DAY, de)
     .filter(o => o.kind === "off" ? (o.start < de && o.end > ds) : sameDay(new Date(o.start), d));
   const wMs = worked.reduce((t, s) => t + (endOf(s) - s.start), 0), sMs = schedHours(occ);
   const range = (a, b) => `${tFmt.format(new Date(a))} – ${b ? tFmt.format(new Date(b)) : "now"}${b && !sameDay(new Date(a), new Date(b)) ? " (next day)" : ""}`;
-  const workedRows = worked.map(s => `<div class="occ tinted${pc(s.person)}"><div class="range">${range(s.start, s.end)}</div><div class="dur">${dur(endOf(s) - s.start)}</div>
-    <div class="meta"><span class="dot"></span><b>${esc(s.person || "No patient")}</b>${s.note ? " · " + esc(s.note) : ""}${!s.end ? " · on the clock" : ""}</div></div>`).join("");
+  const pname = x => ro ? patientName(x) : (x.person || "No patient");
+  const by = x => ro ? ` · <span class="dot"></span>by ${esc(cgName(x.owner))}` : "";
+  const lead = ro ? "" : '<span class="dot"></span>';   // the dot sits by the name that sets the color
+  const workedRows = worked.map(s => `<div class="occ tinted${tint(s)}"><div class="range">${range(s.start, s.end)}</div><div class="dur">${dur(endOf(s) - s.start)}</div>
+    <div class="meta">${lead}<b>${esc(pname(s))}</b>${by(s)}${s.note ? " · " + esc(s.note) : ""}${!s.end ? " · on the clock" : ""}</div></div>`).join("");
   const schedRows = occ.map(o => {
     if (o.kind === "off") {
       const a = Math.max(o.start, ds), b = Math.min(o.end, de);
       const when = a === ds && b === de ? "All day" : `${tFmt.format(new Date(a))} – ${b === de ? "midnight" : tFmt.format(new Date(b))}`;
-      return `<div class="occ off"><div class="range">${when}</div><div class="dur"></div><div class="meta"><span class="pill">Time off</span></div></div>`;
+      return ro
+        ? `<div class="occ off tinted${cc(o.owner)}"><div class="range">${when}</div><div class="dur"></div><div class="meta"><span class="dot"></span><b>${esc(cgName(o.owner))}</b> unavailable</div></div>`
+        : `<div class="occ off"><div class="range">${when}</div><div class="dur"></div><div class="meta"><span class="pill">Time off</span></div></div>`;
     }
-    const what = o.e.kind === "weekly" ? `Repeats ${esc(daysLabel(o.e.days))}` : "One time";
-    return `<div class="occ tinted${pc(o.person)}${o.cancelled ? " cancel" : ""}"><div class="range">${range(o.start, o.end)}</div><div class="dur">${dur(o.end - o.start)}</div>
-      <div class="meta"><span class="dot"></span><b>${esc(o.person)}</b> · ${what}${o.cancelled ? ' · <span class="pill">Time off</span>' : ""}${o.note ? " · " + esc(o.note) : ""}</div></div>`;
+    const what = ro ? "" : ` · ${o.e.kind === "weekly" ? `Repeats ${esc(daysLabel(o.e.days))}` : "One time"}`;
+    const off = o.cancelled ? ` · <span class="pill">${ro ? "Caregiver unavailable" : "Time off"}</span>` : "";
+    return `<div class="occ tinted${tint(o)}${o.cancelled ? " cancel" : ""}"><div class="range">${range(o.start, o.end)}</div><div class="dur">${dur(o.end - o.start)}</div>
+      <div class="meta">${lead}<b>${esc(pname(o))}</b>${by(o)}${what}${off}${o.note ? " · " + esc(o.note) : ""}</div></div>`;
   }).join("");
+  // Who this day is about, right after the date: patients for caregivers, caregivers for payers.
+  const who = new Map();
+  const note = (key, name, cls) => { if (key && !who.has(key)) who.set(key, { name, cls }); };
+  for (const x of [...worked, ...occ]) {
+    if (ro) note(x.owner, cgName(x.owner), cc(x.owner));
+    else if (x.kind !== "off") note(samePerson(x.person), x.person, pc(x.person));
+  }
+  if (!who.size && !ro && myPatient !== "all") note(myPatient, myPatientName(), pc(myPatientName()));
+  if (!who.size && ro && view === "shared" && sharedCaregiver !== "all") note(sharedCaregiver, cgName(sharedCaregiver), cc(sharedCaregiver));
+  const names = [...who.values()].sort((a, b) => a.name.localeCompare(b.name))
+    .map(w => `<span class="who${w.cls}"><span class="dot"></span>${esc(w.name)}</span>`).join("");
   el.hidden = false;
-  el.innerHTML = `<div class="rowline"><h3>${dayFmt.format(d)}</h3><button type="button" class="link" id="dayClose">Close</button></div>
+  el.innerHTML = `<div class="rowline"><h3>${dayFmt.format(d)}${names ? ` <span class="whosep">·</span> <span class="whos">${names}</span>` : ""}</h3>
+      <button type="button" class="link" id="dayClose">Close</button></div>
     <p class="vs">Worked <b>${hrs(wMs)}</b> · Scheduled <b>${hrs(sMs)}</b></p>
     <span class="label">Worked</span>${workedRows || `<p class="hint">No shifts logged.</p>`}
     <span class="label">Scheduled</span>${schedRows || `<p class="hint">Nothing scheduled.</p>`}`;
@@ -198,13 +228,13 @@ function shiftRow(s) {
   const st = new Date(s.start), live = !s.end;
   const en = live ? null : new Date(s.end);
   const range = `${tFmt.format(st)} – ${live ? "now" : tFmt.format(en)}${en && !sameDay(st, en) ? " (next day)" : ""}`;
-  const meta = [s.person ? `${colorsOn() ? '<span class="dot"></span>' : ""}<b>${esc(patientName(s))}</b>` : "No patient", readOnly() && `by ${esc(cgName(s.owner))}`, s.note && esc(s.note), s.failed && "Not saved online"].filter(Boolean).join(" · ");
+  const meta = [s.person ? `${colorsOn() ? '<span class="dot"></span>' : ""}<b>${esc(patientName(s))}</b>` : "No patient", readOnly() && `<span class="dot"></span>by ${esc(cgName(s.owner))}`, s.note && esc(s.note), s.failed && "Not saved online"].filter(Boolean).join(" · ");
   const confirm = confirmId === s.id ? `<div class="confirm"><span>Delete this shift?</span>
     <button class="link danger" data-act="del-yes" data-id="${esc(s.id)}">Delete</button>
     <button class="link" data-act="del-no">Keep it</button></div>` : "";
   const acts = live || readOnly() ? "" : `<button class="link" data-act="edit" data-id="${esc(s.id)}">Edit</button>
       <button class="link danger" data-act="del" data-id="${esc(s.id)}">Delete</button>`;
-  return `<div class="shift${live ? " live" : ""}${colorsOn() && s.person ? " tinted" + pc(s.person) : ""}">
+  return `<div class="shift${live ? " live" : ""}${s.person ? " tinted" + tint(s) : ""}">
     <div class="range">${range}</div><div class="dur" ${live ? 'data-live="1"' : ""}>${dur(endOf(s) - s.start)}</div>
     <div class="meta">${meta}</div>
     <div class="acts">${acts}</div>

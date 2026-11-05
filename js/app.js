@@ -47,7 +47,7 @@ function renderTabs() {
     const email = id => caregiverNames[id] && caregiverNames[id].email && caregiverNames[id].email !== cgName(id) ? " · " + caregiverNames[id].email : "";
     $("sharedWho").innerHTML = one
       ? `<h2>${esc(cgName(one))}</h2><p class="hint">Caring for ${esc(patientsOf(one).join(", "))}${esc(email(one))}</p>`
-      : `<h2>All caregivers</h2>` + cgs.map(id => `<p class="hint"><b>${esc(cgName(id))}</b> · caring for ${esc(patientsOf(id).join(", "))}</p>`).join("");
+      : `<h2>All caregivers</h2>` + cgs.map(id => `<p class="hint${cc(id)}"><span class="dot"></span><b>${esc(cgName(id))}</b> · caring for ${esc(patientsOf(id).join(", "))}</p>`).join("");
   }
   $("sharedUpdated").textContent = sharedErr || (sharedLoadedAt ? "Updated " + tFmt.format(new Date(sharedLoadedAt)) : "");
 }
@@ -55,6 +55,17 @@ $("tabMine").addEventListener("click", () => { view = payerMode() ? "all" : "min
 $("tabPlan").addEventListener("click", () => { view = "plan"; weekOffset = 0; closeForm(); renderAll(); });
 $("tabShared").addEventListener("click", () => { view = "shared"; weekOffset = 0; closeForm(); closePlanForm(); renderAll(); refreshShared(); });
 $("ownerPick").addEventListener("change", e => { sharedCaregiver = e.target.value; renderAll(); });
+// ---------- collapsible Shifts and Schedule lists ----------
+function applyCollapsed() {
+  $("list").hidden = !listOpen; $("listToggle").setAttribute("aria-expanded", String(listOpen));
+  $("planList").hidden = !schedOpen; $("planToggle").setAttribute("aria-expanded", String(schedOpen));
+  const ps = $("planSharedList"), pt = $("planSharedToggle");
+  if (ps) { ps.hidden = !schedOpen; pt.setAttribute("aria-expanded", String(schedOpen)); }
+}
+function toggleList() { listOpen = !listOpen; setLS(LS_LIST_OPEN, listOpen ? "1" : "0"); applyCollapsed(); }
+function toggleSched() { schedOpen = !schedOpen; setLS(LS_SCHED_OPEN, schedOpen ? "1" : "0"); applyCollapsed(); }
+$("listToggle").addEventListener("click", toggleList);
+$("planToggle").addEventListener("click", toggleSched);
 $("myPatient").addEventListener("change", e => { myPatient = e.target.value; confirmId = null; planConfirm = null; renderAll(); });
 $("sharedRefresh").addEventListener("click", refreshShared);
 
@@ -85,6 +96,9 @@ setInterval(() => {
 // ================= start =================
 shifts = loadLocal();
 syncOpen = getLS(LS_SYNC_OPEN) !== "0";   // open until you collapse it
+listOpen = getLS(LS_LIST_OPEN) !== "0";
+schedOpen = getLS(LS_SCHED_OPEN) !== "0";
+applyCollapsed();
 sched = loadSched();
 const standalone = window.navigator.standalone === true || window.matchMedia("(display-mode: standalone)").matches;
 $("installTip").hidden = standalone;

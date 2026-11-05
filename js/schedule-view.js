@@ -11,7 +11,7 @@ function occRow(o, d, ro) {
   if (o.kind === "off") {
     const a = Math.max(o.start, dayStart), b = Math.min(o.end, dayEnd);
     range = a === dayStart && b === dayEnd ? "All day" : `${tFmt.format(new Date(a))} – ${b === dayEnd ? "midnight" : tFmt.format(new Date(b))}`;
-    meta = ro ? `<b>${esc(who)}</b> unavailable` : `<span class="pill">Time off</span>`;
+    meta = ro ? `<span class="dot"></span><b>${esc(who)}</b> unavailable` : `<span class="pill">Time off</span>`;
     cls += " off";
     if (!ro) acts = `<button class="link" data-pact="edit" data-id="${esc(e.id)}">Edit</button>
       <button class="link danger" data-pact="del" data-id="${esc(e.id)}">Delete</button>`;
@@ -19,7 +19,7 @@ function occRow(o, d, ro) {
     const en = new Date(o.end);
     range = `${tFmt.format(new Date(o.start))} – ${tFmt.format(en)}${!sameDay(new Date(o.start), en) ? " (next day)" : ""}`;
     const pname = ro ? patientName({ person: o.person }) : o.person;
-    meta = [`${ro ? "" : '<span class="dot"></span>'}<b>${esc(pname)}</b>`, ro && `by ${esc(who)}`, !ro && (e.kind === "weekly" ? `Repeats ${esc(daysLabel(e.days))}` : "One time"),
+    meta = [`${ro ? "" : '<span class="dot"></span>'}<b>${esc(pname)}</b>`, ro && `<span class="dot"></span>by ${esc(who)}`, !ro && (e.kind === "weekly" ? `Repeats ${esc(daysLabel(e.days))}` : "One time"),
       o.cancelled && `<span class="pill">${ro ? "Caregiver unavailable" : "Time off"}</span>`, e.note && esc(e.note)].filter(Boolean).join(" · ");
     if (o.cancelled) cls += " cancel";
     if (!ro) acts = (e.kind === "weekly" && !o.cancelled ? `<button class="link" data-pact="skip" data-id="${esc(e.id)}" data-start="${o.start}" data-end="${o.end}">Skip this day</button>` : "")
@@ -29,7 +29,9 @@ function occRow(o, d, ro) {
   const confirm = !ro && planConfirm === e.id ? `<div class="confirm"><span>${e.kind === "weekly" ? "Delete every week of this repeating shift?" : "Delete this?"}</span>
     <button class="link danger" data-pact="del-yes" data-id="${esc(e.id)}">Delete</button>
     <button class="link" data-pact="del-no">Keep it</button></div>` : "";
-  if (!ro && o.kind !== "off") cls += " tinted" + pc(o.person);
+  // Patient color for caregivers; caregiver color for payers (including their time off).
+  if (ro) cls += " tinted" + cc(o.owner);
+  else if (o.kind !== "off") cls += " tinted" + pc(o.person);
   return `<div class="${cls}"><div class="range">${range}</div><div class="dur">${o.kind === "off" ? "" : dur(o.end - o.start)}</div>
     <div class="meta">${meta}</div><div class="acts">${acts}</div>${confirm}</div>`;
 }
@@ -78,8 +80,11 @@ function renderPlan() {
 function renderPlanShared() {
   if (!readOnly()) return;
   const days = scheduleDays(true);
-  $("planShared").innerHTML = `<h2>Scheduled ${weekOffset === 0 ? "this week" : weekOffset === 1 ? "next week" : weekOffset === -1 ? "last week" : "that week"}</h2>
-    ${days || `<div class="empty">Nothing scheduled.</div>`}`;
+  const title = `Scheduled ${weekOffset === 0 ? "this week" : weekOffset === 1 ? "next week" : weekOffset === -1 ? "last week" : "that week"}`;
+  $("planShared").innerHTML = `<button type="button" class="collapse inline" id="planSharedToggle" aria-expanded="${schedOpen}" aria-controls="planSharedList">
+      <h2>${title}</h2><span class="chev" aria-hidden="true"></span></button>
+    <div id="planSharedList"${schedOpen ? "" : " hidden"}>${days || `<div class="empty">Nothing scheduled.</div>`}</div>`;
+  $("planSharedToggle").addEventListener("click", () => toggleSched());
 }
 $("planList").addEventListener("click", e => {
   const b = e.target.closest("button[data-pact]"); if (!b) return;
