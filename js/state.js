@@ -30,6 +30,7 @@ let shares = [];             // [{email, person}]: who sees which of my patients
 let profile = { display_name: "" };
 let shareUi = { err: "", ok: "", confirm: null, busy: false, savedName: false, person: "", email: "" };
 let signoutConfirm = false;
+let selDay = null;           // day opened from the week chart ("YYYY-MM-DD"), caregiver screens only
 let myPatient = "all";       // caregiver's patient filter on Shifts and Schedule: "all", or a patient (samePerson form)
 let syncOpen = true;          // Sync & sharing card open or collapsed; remembered on this device
 
@@ -46,6 +47,7 @@ const LS_KEY = "care-hours-shifts-v1";
 const LS_OWNER = "care-hours-synced-owner";
 const LS_SCHED = "care-hours-schedule-v1";
 const LS_SYNC_OPEN = "care-hours-sync-open";
+const LS_COLORS = "care-hours-patient-colors";
 
 // Your patients, spelled the way you most recently entered them.
 function patients() {
@@ -83,4 +85,26 @@ const patientsOf = id => sharedPatients.filter(g => g.caregivers.includes(id)).m
 // The caregiver's patient filter. Time off isn't for one patient, so it always shows.
 const forMyPatient = x => myPatient === "all" || x.kind === "off" || samePerson(x.person) === myPatient;
 const myPatientName = () => patients().find(p => samePerson(p) === myPatient) || myPatient;
+// ---------- patient colors (caregiver screens) ----------
+// Each patient keeps the same color on this device. New patients get the first unused color.
+const PALETTE = 8;
+let colorMap = null;
+function patientColor(name) {
+  const k = samePerson(name);
+  if (!k) return -1;
+  if (!colorMap) { try { colorMap = JSON.parse(getLS(LS_COLORS) || "{}") || {}; } catch (e) { colorMap = {}; } }
+  if (!(k in colorMap)) {
+    const used = new Set(Object.values(colorMap));
+    let i = 0;
+    while (used.has(i) && i < PALETTE) i++;
+    colorMap[k] = i < PALETTE ? i : Object.keys(colorMap).length % PALETTE;
+    setLS(LS_COLORS, JSON.stringify(colorMap));
+  }
+  return colorMap[k];
+}
+// Hand out colors alphabetically the first time, so devices with the same patients start out alike.
+const seedColors = () => [...patients()].sort((a, b) => a.localeCompare(b)).forEach(patientColor);
+const pc = name => { const i = patientColor(name); return i < 0 ? "" : ` pc${i}`; };
+const colorsOn = () => !readOnly();
+
 const cgName = id => (caregiverNames[id] && caregiverNames[id].name) || "A caregiver";

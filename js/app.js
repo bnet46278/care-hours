@@ -13,6 +13,7 @@ function renderTabs() {
   $("tabShared").setAttribute("aria-selected", String(view === "shared"));
   const ro = readOnly(), plan = view === "plan";
   $("sharedHead").hidden = !ro;
+  $("ownerPickWrap").hidden = true;   // shown below on the Caregivers tab
   $("clock").hidden = ro || plan;
   $("addBtn").hidden = ro;
   $("plan").hidden = !plan;
@@ -60,6 +61,7 @@ $("sharedRefresh").addEventListener("click", refreshShared);
 // ================= top-level render =================
 function renderAll() {
   $("today").textContent = dayFmt.format(new Date());
+  seedColors();
   $("people").innerHTML = patients().map(p => `<option value="${esc(p)}"></option>`).join("");
   renderTabs();
   if (view === "mine") {

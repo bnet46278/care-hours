@@ -26,6 +26,16 @@
     <div class="today" id="today"></div>
   </header>
 
+  <!-- Filters at the top: patients for caregivers, caregivers for payers -->
+  <div class="field patientpick" id="myPatientWrap" hidden>
+    <label class="label" for="myPatient">Show</label>
+    <select id="myPatient"></select>
+  </div>
+  <div class="field patientpick" id="ownerPickWrap" hidden>
+    <label class="label" for="ownerPick">Show</label>
+    <select id="ownerPick"></select>
+  </div>
+
   <div class="tabs" id="tabs" role="tablist" hidden>
     <button role="tab" id="tabMine" aria-selected="true">Shifts</button>
     <button role="tab" id="tabPlan" aria-selected="false">Schedule</button>
@@ -37,10 +47,6 @@
       <span class="label" id="sharedLabel">Hours shared with you</span>
       <span class="readonly">View only</span>
     </div>
-    <div class="field" id="ownerPickWrap">
-      <label class="label" for="ownerPick">Caregiver</label>
-      <select id="ownerPick"></select>
-    </div>
     <div id="sharedWho"></div>
     <div class="rowline">
       <span class="hint" id="sharedUpdated"></span>
@@ -49,11 +55,6 @@
   </section>
 
   <section class="clock" id="clock" aria-live="polite"></section>
-
-  <div class="field patientpick" id="myPatientWrap" hidden>
-    <label class="label" for="myPatient">Show</label>
-    <select id="myPatient"></select>
-  </div>
 
   <section class="week" aria-label="Weekly hours">
     <div class="weekhead">
@@ -67,6 +68,8 @@
     <div class="total"><b class="num" id="weekTotal">0h</b><span id="weekDecimal">0.00 hours</span></div>
     <div class="vs" id="weekVs" hidden></div>
     <div class="bars" id="bars"></div>
+    <div class="legend" id="legend" hidden></div>
+    <div class="daydetail" id="dayDetail" hidden></div>
     <div class="bycg" id="byCaregiver" hidden></div>
   </section>
 

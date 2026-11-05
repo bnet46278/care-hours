@@ -19,7 +19,7 @@ function occRow(o, d, ro) {
     const en = new Date(o.end);
     range = `${tFmt.format(new Date(o.start))} – ${tFmt.format(en)}${!sameDay(new Date(o.start), en) ? " (next day)" : ""}`;
     const pname = ro ? patientName({ person: o.person }) : o.person;
-    meta = [`<b>${esc(pname)}</b>`, ro && `by ${esc(who)}`, !ro && (e.kind === "weekly" ? `Repeats ${esc(daysLabel(e.days))}` : "One time"),
+    meta = [`${ro ? "" : '<span class="dot"></span>'}<b>${esc(pname)}</b>`, ro && `by ${esc(who)}`, !ro && (e.kind === "weekly" ? `Repeats ${esc(daysLabel(e.days))}` : "One time"),
       o.cancelled && `<span class="pill">${ro ? "Caregiver unavailable" : "Time off"}</span>`, e.note && esc(e.note)].filter(Boolean).join(" · ");
     if (o.cancelled) cls += " cancel";
     if (!ro) acts = (e.kind === "weekly" && !o.cancelled ? `<button class="link" data-pact="skip" data-id="${esc(e.id)}" data-start="${o.start}" data-end="${o.end}">Skip this day</button>` : "")
@@ -29,6 +29,7 @@ function occRow(o, d, ro) {
   const confirm = !ro && planConfirm === e.id ? `<div class="confirm"><span>${e.kind === "weekly" ? "Delete every week of this repeating shift?" : "Delete this?"}</span>
     <button class="link danger" data-pact="del-yes" data-id="${esc(e.id)}">Delete</button>
     <button class="link" data-pact="del-no">Keep it</button></div>` : "";
+  if (!ro && o.kind !== "off") cls += " tinted" + pc(o.person);
   return `<div class="${cls}"><div class="range">${range}</div><div class="dur">${o.kind === "off" ? "" : dur(o.end - o.start)}</div>
     <div class="meta">${meta}</div><div class="acts">${acts}</div>${confirm}</div>`;
 }

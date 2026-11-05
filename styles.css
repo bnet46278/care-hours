@@ -13,6 +13,8 @@
   --danger: #B3261E;
   --bar: #BCD7D1;
   --bar-today: #1E7369;
+  /* Patient colors: no orange or red, which mean time off and delete */
+  --p0: #2F6FB3; --p1: #BE185D; --p2: #7C3AED; --p3: #15803D; --p4: #0E7490; --p5: #6B4F2A; --p6: #4D7C0F; --p7: #475569;
   --display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
   --body: "Atkinson Hyperlegible", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
@@ -21,13 +23,13 @@
   :root:not([data-theme="light"]) {
     --bg: #0E1918; --surface: #162523; --ink: #E3EDEB; --muted: #92A7A3; --line: #29403C;
     --accent: #52B5A7; --accent-ink: #052019; --live: #F2A651; --live-soft: #3A2814;
-    --danger: #F2877F; --bar: #2B524C; --bar-today: #52B5A7; color-scheme: dark;
+    --danger: #F2877F; --bar: #2B524C; --bar-today: #52B5A7; --p0: #7FB0E8; --p1: #F080B5; --p2: #B79CF7; --p3: #6FCF8E; --p4: #5FC8DE; --p5: #C9A27A; --p6: #A6D162; --p7: #A3B1C6; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0E1918; --surface: #162523; --ink: #E3EDEB; --muted: #92A7A3; --line: #29403C;
   --accent: #52B5A7; --accent-ink: #052019; --live: #F2A651; --live-soft: #3A2814;
-  --danger: #F2877F; --bar: #2B524C; --bar-today: #52B5A7; color-scheme: dark;
+  --danger: #F2877F; --bar: #2B524C; --bar-today: #52B5A7; --p0: #7FB0E8; --p1: #F080B5; --p2: #B79CF7; --p3: #6FCF8E; --p4: #5FC8DE; --p5: #C9A27A; --p6: #A6D162; --p7: #A3B1C6; color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -102,6 +104,23 @@ textarea { resize: vertical; min-height: 64px; }
 .day.is-today .fill { background: var(--bar-today); }
 .day.is-today .dname { color: var(--ink); font-weight: 700; }
 .dname { font-size: 0.75rem; color: var(--muted); }
+/* Patient colors */
+.pc0 { --pc: var(--p0); } .pc1 { --pc: var(--p1); } .pc2 { --pc: var(--p2); } .pc3 { --pc: var(--p3); }
+.pc4 { --pc: var(--p4); } .pc5 { --pc: var(--p5); } .pc6 { --pc: var(--p6); } .pc7 { --pc: var(--p7); }
+.tinted { border-left: 4px solid var(--pc); padding-left: 10px; }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--pc, var(--muted)); margin-right: 6px; vertical-align: 0; }
+.fill.stack { background: none; display: flex; flex-direction: column-reverse; overflow: hidden; }
+.fill.stack .seg { width: 100%; background: var(--pc); min-height: 2px; }
+.fill.stack .seg + .seg { border-bottom: 1px solid var(--surface); }
+/* Week chart days you can tap */
+button.day { font: inherit; color: inherit; background: none; border: 0; padding: 4px 2px; border-radius: 10px; cursor: pointer; }
+button.day:hover .track { border-color: var(--accent); }
+button.day[aria-pressed="true"] { background: var(--surface); box-shadow: 0 0 0 2px var(--accent); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.85rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; }
+.daydetail { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.daydetail h3 { font-family: var(--display); font-size: 1.05rem; margin: 0; }
+.daydetail .occ { padding: 6px 0 6px 10px; }
 .dhrs { font-size: 0.8rem; font-variant-numeric: tabular-nums; }
 
 /* Log */
