@@ -49,12 +49,12 @@ The scripts are plain browser scripts with no build step. They share one set of 
 ### 4. Try it
 1. Open your site, scroll to **Back up, sync and share**, and sign in with your email.
 2. Under **Share a patient**, enter the patient's name and the payer's email.
-3. They open the same site, sign in with that email, and see a **Shared with me** tab with only that patient's shifts. They can't change anything.
+3. They open the same site and sign in with that email. Their **Shifts** tab shows only that patient's shifts, and the **Caregivers** tab lets them pick a caregiver. They can't change anything.
 
 ## Tabs
 
 - **Caregivers:** **Shifts** (clock in and out, log missed shifts) and **Schedule** (repeating shifts, one-time shifts, time off).
-- **Payers:** **Shifts** (every shift shared with them, from all caregivers) and **Shared with me** (one patient at a time). Both show the schedule and scheduled vs worked hours. Payers can't change anything.
+- **Payers:** **Shifts** (every shift shared with them, from all caregivers) and **Caregivers** (all caregivers, or pick one). Both show the schedule and scheduled vs worked hours. Payers can't change anything.
 - **Time off wins.** A scheduled shift during the caregiver's time off is skipped and doesn't count as scheduled. **Skip this day** on a repeating shift adds time off for just that shift. Payers see time off only as "unavailable".
 
 ## Testing

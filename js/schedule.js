@@ -41,9 +41,7 @@ const schedHours = occ => occ.filter(o => o.kind !== "off" && !o.cancelled).redu
 function viewSched() {
   if (view === "all") return sharedSched;
   if (view === "shared") {
-    const g = sharedPatients.find(g => g.key === sharedPatient);
-    const cgs = g ? g.caregivers : [];
-    return sharedSched.filter(e => e.kind === "off" ? cgs.includes(e.owner) : samePerson(e.person) === sharedPatient);
+    return sharedSched.filter(e => sharedCaregiver === "all" || e.owner === sharedCaregiver);
   }
   return liveSched().map(e => ({ ...e, owner: "me" }));
 }

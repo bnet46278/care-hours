@@ -3,7 +3,7 @@
 
 // ================= render: tabs & shared header =================
 function renderTabs() {
-  // Caregivers: Shifts | Schedule (| Shared with me). Payers: Shifts | Shared with me.
+  // Caregivers: Shifts | Schedule (| Caregivers, if someone shares with them). Payers: Shifts | Caregivers.
   const payer = payerMode(), hasShared = !!me && sharedPatients.length > 0;
   $("tabs").hidden = false;
   $("tabPlan").hidden = payer;
@@ -18,6 +18,10 @@ function renderTabs() {
   $("plan").hidden = !plan;
   $("planShared").hidden = !ro;
   $("logSection").hidden = plan;
+  // Payer's Shifts tab: the shifts list comes first, then the schedule. Elsewhere the schedule comes first.
+  const log = $("logSection"), ps = $("planShared");
+  if (view === "all") { if (log.nextElementSibling !== ps) log.after(ps); }
+  else if (ps.nextElementSibling !== log) log.before(ps);
   if (!ro) return;
   const names = ids => ids.map(cgName).join(", ");
   if (view === "all") {
@@ -26,18 +30,24 @@ function renderTabs() {
     $("sharedWho").innerHTML = `<h2>All shared shifts</h2>` + sharedPatients.map(g =>
       `<p class="hint"><b>${esc(g.person)}</b> · cared for by ${esc(names(g.caregivers))}</p>`).join("");
   } else {
-    $("sharedLabel").textContent = "Patient shared with you";
-    $("ownerPickWrap").hidden = sharedPatients.length < 2;
-    $("ownerPick").innerHTML = sharedPatients.map(g => `<option value="${esc(g.key)}"${g.key === sharedPatient ? " selected" : ""}>${esc(g.person)}</option>`).join("");
-    const g = sharedPatients.find(g => g.key === sharedPatient);
-    $("sharedWho").innerHTML = g ? `<h2>${esc(g.person)}</h2><p class="hint">Cared for by ${esc(names(g.caregivers))}</p>` : "";
+    // Pick one caregiver, or all of them.
+    const cgs = sharedCaregivers();
+    $("sharedLabel").textContent = "Caregivers who share with you";
+    $("ownerPickWrap").hidden = cgs.length < 2;
+    $("ownerPick").innerHTML = `<option value="all"${sharedCaregiver === "all" ? " selected" : ""}>All caregivers</option>` +
+      cgs.map(id => `<option value="${esc(id)}"${id === sharedCaregiver ? " selected" : ""}>${esc(cgName(id))}</option>`).join("");
+    const one = sharedCaregiver !== "all" ? sharedCaregiver : cgs.length === 1 ? cgs[0] : null;
+    const email = id => caregiverNames[id] && caregiverNames[id].email && caregiverNames[id].email !== cgName(id) ? " · " + caregiverNames[id].email : "";
+    $("sharedWho").innerHTML = one
+      ? `<h2>${esc(cgName(one))}</h2><p class="hint">Caring for ${esc(patientsOf(one).join(", "))}${esc(email(one))}</p>`
+      : `<h2>All caregivers</h2>` + cgs.map(id => `<p class="hint"><b>${esc(cgName(id))}</b> · caring for ${esc(patientsOf(id).join(", "))}</p>`).join("");
   }
   $("sharedUpdated").textContent = sharedErr || (sharedLoadedAt ? "Updated " + tFmt.format(new Date(sharedLoadedAt)) : "");
 }
 $("tabMine").addEventListener("click", () => { view = payerMode() ? "all" : "mine"; weekOffset = 0; closeForm(); closePlanForm(); renderAll(); if (view === "all") refreshShared(); });
 $("tabPlan").addEventListener("click", () => { view = "plan"; weekOffset = 0; closeForm(); renderAll(); });
 $("tabShared").addEventListener("click", () => { view = "shared"; weekOffset = 0; closeForm(); closePlanForm(); renderAll(); refreshShared(); });
-$("ownerPick").addEventListener("change", e => { sharedPatient = e.target.value; renderAll(); });
+$("ownerPick").addEventListener("change", e => { sharedCaregiver = e.target.value; renderAll(); });
 $("sharedRefresh").addEventListener("click", refreshShared);
 
 // ================= top-level render =================

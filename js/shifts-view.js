@@ -241,8 +241,7 @@ $("csvBtn").addEventListener("click", () => {
     lines.push([`Total for ${cgName(id)}`, "", "", h.toFixed(2), "", cgName(id), ""]);
   lines.push(ro ? ["Total", "", "", total.toFixed(2), "", "", ""] : ["Total", "", "", total.toFixed(2), "", ""]);
   const csv = lines.map(r => r.map(csvCell).join(",")).join("\r\n");
-  const g = sharedPatients.find(g => g.key === sharedPatient);
-  const who = view === "all" ? "shared" : view === "shared" && g ? g.person : "";
+  const who = view === "all" ? "shared" : view === "shared" ? (sharedCaregiver === "all" ? "all-caregivers" : cgName(sharedCaregiver)) : "";
   const slug = who ? who.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" : "";
   const blob = new Blob([csv], { type: "text/csv" });
   const a = document.createElement("a");

@@ -34,7 +34,7 @@ To run one file or one test: `npx playwright test specs/schedule.spec.js`, or `n
 | --- | --- |
 | `specs/shifts.spec.js` | Clocking in and out, required patient, overnight and missed shifts, edit/delete, CSV, old saved data |
 | `specs/sync.spec.js` | Emailed-code sign-in, uploading, two devices, deletes reaching every device, offline changes, sign out |
-| `specs/sharing.spec.js` | Sharing a patient, the payer's Shifts and Shared with me views, hours by caregiver, removing a share, payers can't edit |
+| `specs/sharing.spec.js` | Sharing a patient, the payer's Shifts and Caregivers views, hours by caregiver, removing a share, payers can't edit |
 | `specs/schedule.spec.js` | Repeating and one-time shifts, time off, Skip this day, clock in from the schedule, sync, what payers see |
 | `specs/offline.spec.js` | The app opens and works with no connection |
 | `unit/schedule-math.spec.js` | The schedule math on its own, including the night the clocks fall back |

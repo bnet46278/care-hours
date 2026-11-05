@@ -57,23 +57,53 @@ test.describe("Sharing with payers", () => {
     await expect(payer.$("[data-act=edit], [data-act=del]")).toHaveCount(0);
   });
 
-  test("Shared with me shows one patient at a time, across caregivers", async ({ openApp }) => {
+  test("on the payer's Shifts tab the shifts come before the schedule", async ({ openApp }) => {
     await twoCaregivers(openApp);
     const payer = await openApp();
     await payer.signIn("payer@example.com");
-    await payer.tab("Shared with me");
+    const order = () => payer.page.evaluate(() => [...document.querySelectorAll("#logSection, #planShared")].map(e => e.id));
+    await expect(payer.weekTotal()).toHaveText("16h 30m");   // the payer view has loaded
+    await expect.poll(order).toEqual(["logSection", "planShared"]);
+    await payer.tab("Caregivers");
+    await expect.poll(order).toEqual(["planShared", "logSection"]);
+    await payer.tab("Shifts");
+    await expect.poll(order).toEqual(["logSection", "planShared"]);
+  });
 
-    await expect(payer.$("#ownerPick option")).toHaveText(["Dad", "Mom"]);
-    await payer.$("#ownerPick").selectOption({ label: "Mom" });
-    await expect(payer.$("#sharedWho")).toContainText("Cared for by Ann L., Cynda B.");
-    await expect(payer.weekTotal()).toHaveText("13h 30m");
-    await expect(payer.$("#list")).not.toContainText("doctor visit");
+  test("Caregivers tab shows all caregivers, or the one picked", async ({ openApp }) => {
+    await twoCaregivers(openApp);
+    const payer = await openApp();
+    await payer.signIn("payer@example.com");
+    await expect(payer.weekTotal()).toHaveText("16h 30m");
+    await payer.tab("Caregivers");
+
+    // All caregivers is the default.
+    await expect(payer.$("#ownerPick option")).toHaveText(["All caregivers", "Ann L.", "Cynda B."]);
+    await expect(payer.$("#ownerPick")).toHaveValue("all");
+    await expect(payer.$("#sharedWho")).toContainText("Ann L. · caring for Dad, Mom");
+    await expect(payer.$("#sharedWho")).toContainText("Cynda B. · caring for Mom");
+    await expect(payer.weekTotal()).toHaveText("16h 30m");
+
+    // One caregiver: only their shifts, for every patient they share.
+    await payer.$("#ownerPick").selectOption({ label: "Ann L." });
+    await expect(payer.$("#sharedWho")).toContainText("Caring for Dad, Mom");
+    await expect(payer.weekTotal()).toHaveText("5h 00m");
+    await expect(payer.$("#list")).toContainText("doctor visit");
+    await expect(payer.$("#list")).not.toContainText("by Cynda B.");
+    await expect(payer.$("#byCaregiver")).not.toContainText("Cynda B.");
 
     const csv = await payer.downloadCsv();
-    expect(csv.name).toBe("care-hours-mom-week-of-2026-11-02.csv");
+    expect(csv.name).toBe("care-hours-ann-l-week-of-2026-11-02.csv");
     expect(csv.text).toContain("Date,Start,End,Hours,Patient,Caregiver,Notes");
-    expect(csv.text).toContain("Total for Ann L.,,,2.00,,Ann L.,");
-    expect(csv.text).toContain("Total for Cynda B.,,,11.50,,Cynda B.,");
+    expect(csv.text).toContain("Total for Ann L.,,,5.00,,Ann L.,");
+    expect(csv.text).not.toContain("Cynda B.");
+
+    await payer.$("#ownerPick").selectOption({ label: "Cynda B." });
+    await expect(payer.weekTotal()).toHaveText("11h 30m");
+    await expect(payer.$("#list")).not.toContainText("Aunt Jo");   // still only patients shared with this payer
+
+    await payer.$("#ownerPick").selectOption("all");
+    await expect(payer.weekTotal()).toHaveText("16h 30m");
   });
 
   test("a payer only sees the patients shared with them", async ({ openApp }) => {

@@ -34,7 +34,7 @@ async function loadSharedWithMe() {
   }
   sharedPatients = [...byPatient.values()].sort((a, b) => a.person.localeCompare(b.person));
   for (const g of sharedPatients) g.caregivers.sort((a, b) => cgName(a).localeCompare(cgName(b)));
-  if (!sharedPatients.some(g => g.key === sharedPatient)) sharedPatient = sharedPatients[0] ? sharedPatients[0].key : null;
+  if (sharedCaregiver !== "all" && !sharedPairs.some(r => r.owner === sharedCaregiver)) sharedCaregiver = "all";
   // Only leave a shared view that has nothing left; never move someone off the tab they chose.
   if (!sharedPatients.length && readOnly()) view = "mine";
   else if (payerMode() && view === "mine") view = "all";   // payers land on all their shared shifts
@@ -76,7 +76,7 @@ async function onSignedIn(session) {
   await loadSharedWithMe();
 }
 function onSignedOut() {
-  me = null; shares = []; profile = { display_name: "" }; sharedPairs = []; sharedPatients = []; sharedAll = []; sharedSched = []; sharedPatient = null; caregiverNames = {}; view = "mine";
+  me = null; shares = []; profile = { display_name: "" }; sharedPairs = []; sharedPatients = []; sharedAll = []; sharedSched = []; sharedCaregiver = "all"; caregiverNames = {}; view = "mine";
   setSync("off"); renderAll();
 }
 

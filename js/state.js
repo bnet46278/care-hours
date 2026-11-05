@@ -34,7 +34,7 @@ let signoutConfirm = false;
 // patients other caregivers shared with me
 let sharedPairs = [];        // [{owner, person}] exactly as shared
 let sharedPatients = [];     // [{key, person, caregivers: [owner ids]}], one per patient across caregivers
-let sharedPatient = null;    // key of the patient shown in "Shared with me"
+let sharedCaregiver = "all"; // the caregiver shown on the payer's Caregivers tab: "all", or their id
 let caregiverNames = {};     // owner id -> {name, email}
 let sharedAll = [];          // every shift shared with me (read only), each with .owner
 let sharedLoadedAt = null;
@@ -62,7 +62,7 @@ function matchPatient(name) {
 const mine = () => shifts.filter(s => !s.deleted);
 const active = () => mine().filter(s => !s.end).sort((a, b) => b.start - a.start)[0];
 const data = () => view === "all" ? sharedAll
-  : view === "shared" ? sharedAll.filter(s => samePerson(s.person) === sharedPatient)
+  : view === "shared" ? sharedAll.filter(s => sharedCaregiver === "all" || s.owner === sharedCaregiver)
   : mine();
 const readOnly = () => view === "all" || view === "shared";
 // A payer is someone with shared patients who doesn't record shifts of their own.
@@ -74,4 +74,7 @@ const patientName = s => {
   return g ? g.person : s.person;
 };
 
+// Caregivers who share with you, by name, and the patients each one shares.
+const sharedCaregivers = () => [...new Set(sharedPairs.map(r => r.owner))].sort((a, b) => cgName(a).localeCompare(cgName(b)));
+const patientsOf = id => sharedPatients.filter(g => g.caregivers.includes(id)).map(g => g.person);
 const cgName = id => (caregiverNames[id] && caregiverNames[id].name) || "A caregiver";
