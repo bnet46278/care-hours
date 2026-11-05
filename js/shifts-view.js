@@ -56,18 +56,55 @@ function onClock() {
 }
 
 // ================= render: week =================
-function viewWeek() { return addDays(weekStart(new Date()), weekOffset * 7); }
+// ---------- the period on screen: one week, two weeks (this one and the next), or a calendar month ----------
+// weekOffset counts steps from the current period: weeks (also for 2 weeks, which slides a week at a time) or months.
+function viewRange() {
+  const now = new Date();
+  let start, end;
+  if (rangeMode === "month") {
+    start = new Date(now.getFullYear(), now.getMonth() + weekOffset, 1);
+    end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+  } else {
+    // 2 weeks starts on this week and next; each arrow press slides it one week (‹ = last week and this week).
+    start = addDays(weekStart(now), weekOffset * 7);
+    end = addDays(start, rangeMode === "2weeks" ? 14 : 7);
+  }
+  const days = [];
+  for (let d = new Date(start); d < end; d = addDays(d, 1)) days.push(new Date(d));
+  return { start, end, days, s: start.getTime(), e: end.getTime() };
+}
+function viewWeek() { return viewRange().start; }
+// Words for the period: "this week", "these 2 weeks", "this month" (or "that ...").
+function periodWords() {
+  const now = weekOffset === 0;
+  return rangeMode === "month" ? (now ? "this month" : "that month")
+    : rangeMode === "2weeks" ? (now ? "these 2 weeks" : "those 2 weeks")
+    : now ? "this week" : weekOffset === 1 ? "next week" : weekOffset === -1 ? "last week" : "that week";
+}
+function periodTitle(r) {
+  if (rangeMode === "month") return monthFmt.format(r.start);
+  if (rangeMode === "2weeks") return weekOffset === 0 ? "This week and next" : weekOffset === -1 ? "Last week and this week"
+    : `${shortFmt.format(r.start)} – ${shortFmt.format(addDays(r.end, -1))}`;
+  return weekOffset === 0 ? "This week" : weekOffset === -1 ? "Last week" : weekOffset === 1 ? "Next week" : `Week of ${shortFmt.format(r.start)}`;
+}
+// Which period a date falls in, counted from the current one.
+function offsetFor(date) {
+  const now = new Date();
+  if (rangeMode === "month") return (date.getFullYear() - now.getFullYear()) * 12 + date.getMonth() - now.getMonth();
+  const weeks = Math.round((weekStart(date) - weekStart(now)) / (7 * DAY));
+  return weeks;
+}
 function msInDay(dayStart) {
   const dayEnd = addDays(dayStart, 1).getTime(), ds = dayStart.getTime();
   // Each shift counts on the day it started.
   return data().filter(s => s.start >= ds && s.start < dayEnd).reduce((t, s) => t + (endOf(s) - s.start), 0);
 }
 // You can look ahead on the schedule and on payer screens; the log stops at this week.
-const maxWeekAhead = () => view === "mine" ? 0 : 12;
+const maxWeekAhead = () => view === "mine" ? 0 : rangeMode === "month" ? 3 : 12;
 function renderWeek() {
-  const ws = viewWeek(), today = new Date();
-  const days = [...Array(7)].map((_, i) => addDays(ws, i));
-  const wsMs = ws.getTime(), weMs = addDays(ws, 7).getTime();
+  const R = viewRange(), today = new Date();
+  const ws = R.start, days = R.days;
+  const wsMs = R.s, weMs = R.e;
   const occ = occurrences(viewSched(), wsMs, weMs);
   const plan = view === "plan" || view === "pplan";   // Schedule tabs chart scheduled hours
   // The Schedule tab charts scheduled hours; the other tabs chart hours worked.
@@ -76,13 +113,14 @@ function renderWeek() {
   const total = totals.reduce((a, b) => a + b, 0);
   const worked = days.map(msInDay).reduce((a, b) => a + b, 0);
   const scheduled = schedHours(occ);
-  $("weekTitle").textContent = weekOffset === 0 ? "This week" : weekOffset === -1 ? "Last week" : weekOffset === 1 ? "Next week" : `Week of ${shortFmt.format(ws)}`;
+  $("weekTitle").textContent = periodTitle(R);
+  document.querySelectorAll("#rangePick [data-range]").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.range === rangeMode)));
   $("thisWeek").hidden = weekOffset === 0;
   const atMax = weekOffset >= maxWeekAhead();
   $("nextWeek").disabled = atMax;
   $("nextWeek").style.visibility = atMax ? "hidden" : "visible";
   $("weekTotal").textContent = total ? dur(total) : "0h";
-  $("weekDecimal").textContent = `${(total / HOUR).toFixed(2)} hours ${plan ? "scheduled" : "worked"} · ${shortFmt.format(ws)}–${shortFmt.format(days[6])}`;
+  $("weekDecimal").textContent = `${(total / HOUR).toFixed(2)} hours ${plan ? "scheduled" : "worked"} · ${shortFmt.format(ws)}–${shortFmt.format(days[days.length - 1])}`;
   // Scheduled vs worked, whenever there's a schedule to compare with.
   const vs = $("weekVs");
   vs.hidden = !(scheduled || (plan && worked));
@@ -104,18 +142,24 @@ function renderWeek() {
     return [...m.values()].sort((a, b) => a.name.localeCompare(b.name));
   };
   const seen = new Map();
-  $("bars").innerHTML = days.map((d, i) => {
+  // Week: one row with weekday names. 2 weeks and Month: a calendar with weekday headings and date numbers.
+  const cal = rangeMode !== "week";
+  $("bars").className = "bars r-" + rangeMode;
+  const heads = cal ? WEEK_ORDER.map(n => `<div class="dow">${esc(dayShort(n))}</div>`).join("") : "";
+  const lead = cal ? (days[0].getDay() + 6) % 7 : 0;   // blank cells before the 1st of the month
+  const blanks = n => '<div class="day blank" aria-hidden="true"></div>'.repeat(n);
+  $("bars").innerHTML = heads + blanks(lead) + days.map((d, i) => {
     const pct = totals[i] ? Math.max(4, (totals[i] / max) * 100) : 0;
     const key = dateVal(d), label = `${dayFmt.format(d)}, ${totals[i] ? dur(totals[i]) : "nothing"} ${plan ? "scheduled" : "worked"}`;
     const fill = colored && totals[i]
       ? `<div class="fill stack" style="height:${pct}%">${parts(d).map(p => { seen.set(p.key, p); return `<div class="seg${p.cls}" style="flex:${p.ms}"></div>`; }).join("")}</div>`
       : `<div class="fill" style="height:${pct}%"></div>`;
     const inner = `<div class="track" title="${dur(totals[i])}">${fill}</div>
-      <div class="dname">${wdFmt.format(d)}</div>
+      <div class="dname">${cal ? d.getDate() : wdFmt.format(d)}</div>
       <div class="dhrs">${totals[i] ? (totals[i] / HOUR).toFixed(1) : "–"}</div>`;
     // Tap a day to open its details.
     return `<button type="button" class="day${sameDay(d, today) ? " is-today" : ""}" data-day="${key}" aria-pressed="${selDay === key}" aria-label="${esc(label)}. Show details">${inner}</button>`;
-  }).join("");
+  }).join("") + (cal ? blanks((7 - (lead + days.length) % 7) % 7) : "");
   renderDayDetail();
   // Hours box under the chart: per caregiver for payers, per patient for caregivers.
   // Each name has its color dot, so the box is also the chart's color key.
@@ -137,22 +181,22 @@ function renderWeek() {
         <div class="bycg-name"><span class="dot"></span>${esc(r.name)}</div>
         <div class="bycg-row"><span>Worked</span><span class="num">${hrs(r.worked)}</span></div>
         <div class="bycg-row"><span>Scheduled</span><span class="num">${hrs(r.sched)}</span></div></div>`).join("")
-    : `<p class="hint">No hours this week.</p>`);
+    : `<p class="hint">No hours ${periodWords()}.</p>`);
 }
 
 
 // ================= render: list =================
 function renderList() {
-  const ws = viewWeek().getTime(), we = addDays(viewWeek(), 7).getTime();
+  const R = viewRange(), ws = R.s, we = R.e;
   const inWeek = data().filter(s => s.start >= ws && s.start < we).sort((a, b) => b.start - a.start);
   const list = $("list");
   if (!inWeek.length) {
     list.innerHTML = `<div class="empty">${readOnly()
-      ? (sharedErr ? esc(sharedErr) : "No shifts recorded this week.")
-      : myPatient !== "all" ? `No shifts for ${esc(myPatientName())} this week.`
+      ? (sharedErr ? esc(sharedErr) : `No shifts recorded ${periodWords()}.`)
+      : myPatient !== "all" ? `No shifts for ${esc(myPatientName())} ${periodWords()}.`
       : weekOffset === 0
-        ? "No shifts yet this week. Tap <b>Clock in</b> when you start, or add a shift you forgot to record."
-        : "No shifts recorded this week."}</div>`;
+        ? `No shifts yet ${periodWords()}. Tap <b>Clock in</b> when you start, or add a shift you forgot to record.`
+        : `No shifts recorded ${periodWords()}.`}</div>`;
     return;
   }
   const groups = new Map();
@@ -172,8 +216,8 @@ function renderList() {
 // ================= day details (tap a day in the week chart) =================
 function renderDayDetail() {
   const el = $("dayDetail");
-  const ws = viewWeek(), we = addDays(ws, 7);
-  if (!selDay || parseDate(selDay) < ws || parseDate(selDay) >= we) { el.hidden = true; el.innerHTML = ""; return; }
+  const R = viewRange();
+  if (!selDay || parseDate(selDay) < R.start || parseDate(selDay) >= R.end) { el.hidden = true; el.innerHTML = ""; return; }
   const ro = readOnly();
   const d = parseDate(selDay), ds = d.getTime(), de = addDays(d, 1).getTime();
   const worked = data().filter(s => sameDay(new Date(s.start), d)).sort((a, b) => a.start - b.start);
@@ -218,6 +262,13 @@ function renderDayDetail() {
     <span class="label">Scheduled</span>${schedRows || `<p class="hint">Nothing scheduled.</p>`}`;
   $("dayClose").addEventListener("click", () => { selDay = null; renderWeek(); });
 }
+// Week / 2 weeks / Month switch, remembered on this device.
+document.querySelectorAll("#rangePick [data-range]").forEach(b => b.addEventListener("click", () => {
+  if (rangeMode === b.dataset.range) return;
+  rangeMode = b.dataset.range; weekOffset = 0; selDay = null; confirmId = null;
+  setLS(LS_RANGE, rangeMode);
+  renderAll();
+}));
 $("bars").addEventListener("click", e => {
   const b = e.target.closest("button[data-day]"); if (!b) return;
   selDay = selDay === b.dataset.day ? null : b.dataset.day;
@@ -288,7 +339,7 @@ function openForm(s) {
     if (!person) { $("fErr").textContent = "Enter the patient's name."; $("fPerson").focus(); return; }
     const prev = formOpen.prev;
     put({ id: formOpen.id || newId(), start: r.start, end: r.end, person: matchPatient(person), note: $("fNote").value.trim(), updatedAt: prev ? prev.updatedAt : 0 });
-    weekOffset = Math.round((weekStart(new Date(r.start)) - weekStart(new Date())) / (7 * 24 * HOUR));
+    weekOffset = offsetFor(new Date(r.start));
     closeForm(); renderAll();
   });
   $("fDate").focus();
@@ -311,10 +362,10 @@ $("prevWeek").addEventListener("click", () => { weekOffset--; confirmId = null; 
 $("nextWeek").addEventListener("click", () => { if (weekOffset < maxWeekAhead()) { weekOffset++; confirmId = null; renderAll(); } });
 $("thisWeek").addEventListener("click", () => { weekOffset = 0; renderAll(); });
 
-// ================= CSV export of the week on screen =================
+// ================= CSV export of the period on screen =================
 function csvCell(v) { const s = String(v ?? ""); return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }
 $("csvBtn").addEventListener("click", () => {
-  const ws = viewWeek(), we = addDays(ws, 7).getTime();
+  const R = viewRange(), ws = R.start, we = R.e;
   const rows = data().filter(s => s.end && s.start >= ws.getTime() && s.start < we).sort((a, b) => a.start - b.start);
   const ro = readOnly();
   const lines = [ro ? ["Date", "Start", "End", "Hours", "Patient", "Caregiver", "Notes"] : ["Date", "Start", "End", "Hours", "Patient", "Notes"]];
@@ -334,7 +385,8 @@ $("csvBtn").addEventListener("click", () => {
   const blob = new Blob([csv], { type: "text/csv" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = `care-hours-${slug}week-of-${dateVal(ws)}.csv`;
+  const period = rangeMode === "month" ? `month-${dateVal(ws).slice(0, 7)}` : rangeMode === "2weeks" ? `2-weeks-of-${dateVal(ws)}` : `week-of-${dateVal(ws)}`;
+  a.download = `care-hours-${slug}${period}.csv`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 });

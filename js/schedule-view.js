@@ -37,11 +37,11 @@ function occRow(o, d, ro) {
 }
 // The week's schedule, day by day.
 function scheduleDays(ro) {
-  const ws = viewWeek();
-  const occ = occurrences(viewSched(), ws.getTime(), addDays(ws, 7).getTime());
+  const R = viewRange();
+  const occ = occurrences(viewSched(), R.s, R.e);
   const out = [];
-  for (let i = 0; i < 7; i++) {
-    const d = addDays(ws, i), ds = d.getTime(), de = addDays(d, 1).getTime();
+  for (const d of R.days) {
+    const ds = d.getTime(), de = addDays(d, 1).getTime();
     const items = occ.filter(o => o.kind === "off" ? (o.start < de && o.end > ds) : sameDay(new Date(o.start), d));
     if (!items.length) continue;
     const h = schedHours(items.filter(o => o.kind !== "off"));
@@ -59,7 +59,7 @@ function renderPlan() {
     .filter(x => x.o && x.o.end > now).sort((a, b) => a.o.start - b.o.start);
   const rangeTxt = e => `${timeLabel(e.startTime)} – ${timeLabel(e.endTime)}`;
   $("planList").innerHTML = `
-    ${days || (myPatient !== "all" ? `<div class="empty">Nothing scheduled for ${esc(myPatientName())} this week.</div>` : "") || `<div class="empty">Nothing scheduled this week. Add a <b>repeating shift</b> for regular visits, a <b>one-time shift</b>, or <b>time off</b>.</div>`}
+    ${days || (myPatient !== "all" ? `<div class="empty">Nothing scheduled for ${esc(myPatientName())} ${periodWords()}.</div>` : "") || `<div class="empty">Nothing scheduled ${periodWords()}. Add a <b>repeating shift</b> for regular visits, a <b>one-time shift</b>, or <b>time off</b>.</div>`}
     <div class="field"><h2>Repeating shifts</h2>
       ${weekly.length ? `<ul class="rules">${weekly.map(e => `<li><span><b>${esc(e.person)}</b> · ${esc(daysLabel(e.days))}</span>
         <span class="acts"><button class="link" data-pact="edit" data-id="${esc(e.id)}">Edit</button><button class="link danger" data-pact="del" data-id="${esc(e.id)}">Delete</button></span>
@@ -80,7 +80,7 @@ function renderPlan() {
 function renderPlanShared() {
   if (!readOnly()) return;
   const days = scheduleDays(true);
-  const title = `Scheduled ${weekOffset === 0 ? "this week" : weekOffset === 1 ? "next week" : weekOffset === -1 ? "last week" : "that week"}`;
+  const title = `Scheduled ${periodWords()}`;
   $("planShared").innerHTML = `<button type="button" class="collapse inline" id="planSharedToggle" aria-expanded="${schedOpen}" aria-controls="planSharedList">
       <h2>${title}</h2><span class="chev" aria-hidden="true"></span></button>
     <div id="planSharedList"${schedOpen ? "" : " hidden"}>${days || `<div class="empty">Nothing scheduled.</div>`}</div>`;
@@ -163,7 +163,7 @@ function savePlanForm(ev) {
   }
   putSched(en);
   // Jump to the week the entry starts in, so it's visible right away.
-  weekOffset = Math.max(-52, Math.min(maxWeekAhead(), Math.round((weekStart(parseDate(en.onDate)) - weekStart(new Date())) / (7 * DAY))));
+  weekOffset = Math.max(-52, Math.min(maxWeekAhead(), offsetFor(parseDate(en.onDate))));
   if (en.kind === "weekly" && parseDate(en.onDate) < new Date()) weekOffset = 0;
   closePlanForm(); renderAll();
 }

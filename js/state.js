@@ -30,6 +30,7 @@ let shares = [];             // [{email, person}]: who sees which of my patients
 let profile = { display_name: "" };
 let shareUi = { err: "", ok: "", confirm: null, busy: false, savedName: false, person: "", email: "" };
 let signoutConfirm = false;
+let rangeMode = "week";       // the period shown: "week", "2weeks" (this week and the next) or "month"
 let selDay = null;           // day opened from the week chart ("YYYY-MM-DD")
 let myPatient = "all";       // caregiver's patient filter on Shifts and Schedule: "all", or a patient (samePerson form)
 let syncOpen = true;
@@ -52,6 +53,7 @@ const LS_SYNC_OPEN = "care-hours-sync-open";
 const LS_LIST_OPEN = "care-hours-list-open";
 const LS_SCHED_OPEN = "care-hours-sched-open";
 const LS_COLORS = "care-hours-patient-colors";
+const LS_RANGE = "care-hours-range";
 const LS_CG_COLORS = "care-hours-caregiver-colors";
 
 // Your patients, spelled the way you most recently entered them.

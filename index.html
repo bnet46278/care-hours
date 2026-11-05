@@ -21,6 +21,11 @@
 <body>
 
 <div class="wrap">
+  <div class="updatebar" id="updateBar" role="status" hidden>
+    <span>A new version of Care Hours is ready.</span>
+    <button type="button" class="btn" id="updateNow">Refresh</button>
+  </div>
+
   <header class="top">
     <h1>Care Hours</h1>
     <div class="today" id="today"></div>
@@ -45,27 +50,20 @@
     <button role="tab" id="tabShared" aria-selected="false">Caregivers</button>
   </div>
 
-  <section class="sharedhead" id="sharedHead" hidden>
-    <div class="rowline">
-      <span class="label" id="sharedLabel">Hours shared with you</span>
-      <span class="readonly">View only</span>
-    </div>
-    <div id="sharedWho"></div>
-    <div class="rowline">
-      <span class="hint" id="sharedUpdated"></span>
-      <button class="ghost" id="sharedRefresh">Refresh</button>
-    </div>
-  </section>
-
   <section class="clock" id="clock" aria-live="polite"></section>
 
-  <section class="week" aria-label="Weekly hours">
+  <section class="week listcard" aria-label="Hours by period">
+    <div class="seg3" id="rangePick" role="group" aria-label="Show hours for">
+      <button type="button" data-range="week" aria-pressed="true">Week</button>
+      <button type="button" data-range="2weeks" aria-pressed="false">2 weeks</button>
+      <button type="button" data-range="month" aria-pressed="false">Month</button>
+    </div>
     <div class="weekhead">
       <h2 id="weekTitle">This week</h2>
       <div class="nav">
-        <button class="ghost" id="prevWeek" aria-label="Previous week">‹</button>
+        <button class="ghost" id="prevWeek" aria-label="Previous">‹</button>
         <button class="ghost" id="thisWeek" hidden>Today</button>
-        <button class="ghost" id="nextWeek" aria-label="Next week">›</button>
+        <button class="ghost" id="nextWeek" aria-label="Next">›</button>
       </div>
     </div>
     <div class="total"><b class="num" id="weekTotal">0h</b><span id="weekDecimal">0.00 hours</span></div>
@@ -102,6 +100,18 @@
   </section>
 
   <section class="sync" id="sync" aria-live="polite" hidden></section>
+
+  <section class="sharedhead" id="sharedHead" hidden>
+    <div class="rowline">
+      <span class="label" id="sharedLabel">Hours shared with you</span>
+      <span class="readonly">View only</span>
+    </div>
+    <div id="sharedWho"></div>
+    <div class="rowline">
+      <span class="hint" id="sharedUpdated"></span>
+      <button class="ghost" id="sharedRefresh">Refresh</button>
+    </div>
+  </section>
 
   <aside class="install" id="installTip" hidden>
     <span class="label">Use it like an app</span>

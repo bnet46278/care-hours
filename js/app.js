@@ -83,7 +83,8 @@ setInterval(() => {
 
 // ================= start =================
 shifts = loadLocal();
-syncOpen = getLS(LS_SYNC_OPEN) !== "0";   // open until you collapse it
+syncOpen = getLS(LS_SYNC_OPEN) !== "0";
+rangeMode = ["week", "2weeks", "month"].includes(getLS(LS_RANGE)) ? getLS(LS_RANGE) : "week";   // open until you collapse it
 // The Shifts and Schedule cards start collapsed; once you open one, it stays open on this device.
 listOpen = getLS(LS_LIST_OPEN) === "1";
 schedOpen = getLS(LS_SCHED_OPEN) === "1";
@@ -94,4 +95,14 @@ $("installTip").hidden = standalone;
 renderAll();
 initSync();
 try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch (e) {}
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+if ("serviceWorker" in navigator) {
+  // When a newer version takes over in the background, offer a one-tap refresh (never reload on its own,
+  // so nothing being typed is lost). The very first install isn't an update, so it's skipped.
+  const hadVersion = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener("controllerchange", () => { if (hadVersion) $("updateBar").hidden = false; });
+  navigator.serviceWorker.register("sw.js").then(reg => {
+    // Check for an update whenever the app comes back to the front.
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") reg.update().catch(() => {}); });
+  }).catch(() => {});
+}
+$("updateNow").addEventListener("click", () => location.reload());

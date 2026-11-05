@@ -26,6 +26,7 @@ function clockText(ms) {
 const tFmt = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
 const dayFmt = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "short", day: "numeric" });
 const shortFmt = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+const monthFmt = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" });
 const wdFmt = new Intl.DateTimeFormat(undefined, { weekday: "short" });
 const pad = n => String(n).padStart(2, "0");
 const dateVal = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;

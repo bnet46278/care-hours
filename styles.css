@@ -218,6 +218,23 @@ button.day[aria-pressed="true"] { background: var(--surface); box-shadow: 0 0 0 
 .bycg-row .num { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; margin-left: auto; text-align: right; white-space: nowrap; }
 .collapse { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%;
   background: none; border: 0; padding: 4px 0; margin: 0; text-align: left; color: var(--ink); min-height: 44px; }
+/* "New version ready" notice */
+.updatebar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  background: var(--surface); border: 2px solid var(--accent); border-radius: 14px; padding: 10px 14px; font-weight: 700; }
+.updatebar .btn { min-height: 40px; padding: 8px 16px; }
+/* Week / 2 weeks / Month switch and calendar */
+.seg3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 4px; }
+.seg3 button { font: inherit; font-weight: 700; color: var(--muted); background: none; border: 0; border-radius: 9px; padding: 8px 6px; min-height: 40px; cursor: pointer; }
+.seg3 button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.bars .dow { text-align: center; font-size: 0.72rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+.bars .day.blank { visibility: hidden; }
+.bars.r-2weeks, .bars.r-month { gap: 4px; }
+.bars.r-2weeks .track { height: 52px; }
+.bars.r-month .track { height: 34px; border-radius: 6px; }
+.bars.r-month .dname, .bars.r-2weeks .dname { font-size: 0.78rem; color: var(--ink); }
+.bars.r-month .dhrs { font-size: 0.68rem; color: var(--muted); }
+.bars.r-month button.day { padding: 2px 1px; gap: 2px; }
+.week.listcard { display: flex; flex-direction: column; gap: 14px; }
 /* Shifts and Schedule cards */
 .listcard { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; }
 .listcard .loghead { min-height: 44px; }
