@@ -1,6 +1,6 @@
 // Lets Care Hours open without an internet connection.
 // Bump VERSION whenever you change any file, so phones pick up the new version.
-const VERSION = "care-hours-v28";
+const VERSION = "care-hours-v29";
 const FILES = [
   "./", "index.html", "styles.css", "config.js", "manifest.json", "icon-192.png", "icon-512.png", "apple-touch-icon.png",
   // App code. If you add a file to js/, list it here too.

@@ -66,6 +66,17 @@ test.describe("Messages", () => {
     expect(rows[0].recipient).toBe(db.userId("cynda@example.com"));
   });
 
+  test("a caregiver can start the conversation with a payer", async ({ openApp }) => {
+    const { cynda, pat } = await cyndaAndPat(openApp);
+    await openChat(cynda, "Pat P.");
+    await expect(cynda.$(".chathead")).toContainText("Sees Mom");
+    await send(cynda, "Mom had a good day today.");
+    await expect(cynda.$(".bubble.mine")).toContainText("Mom had a good day today.");
+    await expect(pat.$("#msgBadge")).toHaveText("1");
+    await openChat(pat, "Cynda B.");
+    await expect(pat.$(".bubble.theirs")).toContainText("Mom had a good day today.");
+  });
+
   test("the Messages tab hides the hours, and the other tabs bring them back", async ({ openApp }) => {
     const { cynda } = await cyndaAndPat(openApp);
     await expect(cynda.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Messages"]);
@@ -193,9 +204,23 @@ test.describe("Text button", () => {
     const text = pat.$(".contact").filter({ hasText: "Cynda B." }).getByRole("link", { name: /Text Cynda B\./ });
     await expect(text).toHaveAttribute("href", "sms:+13175550123");
     await pat.$("[data-chat]").click();
-    await expect(pat.$(".chathead a.textbtn")).toHaveAttribute("href", "sms:+13175550123");
+    const textIt = pat.page.getByRole("link", { name: "Send as a text to Cynda B." });
+    await expect(textIt).toHaveAttribute("href", "sms:+13175550123");
 
-    // Pat hasn't added a number, so Cynda has nothing to tap yet. Payers can add theirs on the account card.
+    // What's typed in the box goes along, so Text opens Messages with it filled in.
+    await pat.$("#msgBody").fill("Running 10 min late & sorry!");
+    await expect(textIt).toHaveAttribute("href", "sms:+13175550123?&body=Running%2010%20min%20late%20%26%20sorry!");
+    await expect(pat.$("#msgCompose")).toContainText("tap Send there");
+    await pat.$("#msgSend").click();   // sending in the app clears the box, and the Text link with it
+    await expect(pat.$(".bubble.mine")).toContainText("Running 10 min late & sorry!");
+    await expect(textIt).toHaveAttribute("href", "sms:+13175550123");
+
+    // Pat hasn't added a number, so Cynda has nothing to tap yet, and the conversation says why.
+    await openChat(cynda, "Pat P.");
+    await expect(cynda.$("#msgText")).toHaveCount(0);
+    await expect(cynda.$("#msgCompose")).toContainText("To text Pat P. instead, they need to add their mobile number");
+    await cynda.$("#msgBack").click();
+    // Payers can add their number on the account card.
     await msgTab(cynda).click();
     await expect(cynda.$(".contact a.textbtn")).toHaveCount(0);
     await pat.$("#dispPhone").fill("317 555 0199");

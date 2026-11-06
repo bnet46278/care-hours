@@ -30,7 +30,7 @@ function showPhone(p) {
 // Opens the phone's own Messages app, addressed to this person.
 const smsLink = (phone, body) => `sms:${phone}${body ? "?&body=" + encodeURIComponent(body) : ""}`;
 const textButton = c => c && c.phone
-  ? `<a class="ghost textbtn" href="${esc(smsLink(c.phone))}" aria-label="Text ${esc(c.name)} at ${esc(showPhone(c.phone))}">Text</a>` : "";
+  ? `<a class="ghost textbtn" href="${esc(smsLink(c.phone))}" aria-label="Text ${esc(contactName(c))} at ${esc(showPhone(c.phone))}">Text</a>` : "";
 
 // ---------- loading ----------
 const contactName = c => c.name || c.email;
@@ -107,6 +107,8 @@ async function sendMessage(ev) {
   }
   msgDraft[to] = "";
   if ($("msgBody")) $("msgBody").value = "";
+  const tc = contactById(to);
+  if ($("msgText") && tc) $("msgText").href = smsLink(tc.phone, "");
   await loadMessages();
   if ($("msgBody")) $("msgBody").focus();
 }
@@ -141,19 +143,27 @@ function renderMessages() {
     el.innerHTML = `
       <div class="chathead">
         <button type="button" class="link" id="msgBack">‹ All messages</button>
-        <div class="rowline"><h2 class="${contactColor(c).trim()}">${contactColor(c) ? '<span class="dot"></span>' : ""}${esc(contactName(c))}</h2>${textButton(c)}</div>
+        <div class="rowline"><h2 class="${contactColor(c).trim()}">${contactColor(c) ? '<span class="dot"></span>' : ""}${esc(contactName(c))}</h2></div>
         <p class="hint">${esc(contactRole(c))}</p>
       </div>
       <div class="thread" id="msgThread" aria-live="polite"></div>
       <form id="msgCompose" class="field compose" novalidate>
         <label class="label" for="msgBody">Message to ${esc(contactName(c))}</label>
         <textarea id="msgBody" rows="3" maxlength="2000" placeholder="Running a few minutes late…">${esc(msgDraft[c.id] || "")}</textarea>
-        <div class="rowline"><span class="err" id="msgErr" role="alert"></span><button class="btn" type="submit" id="msgSend">Send</button></div>
+        <div class="rowline"><span class="err" id="msgErr" role="alert"></span>
+          <span class="sendbtns">${c.phone ? `<a class="ghost textbtn" id="msgText" href="${esc(smsLink(c.phone, msgDraft[c.id] || ""))}"
+            aria-label="Send as a text to ${esc(contactName(c))}">Text</a>` : ""}<button class="btn" type="submit" id="msgSend">Send</button></span></div>
+        <p class="hint">${c.phone
+          ? `<b>Send</b> keeps the message here in Care Hours. <b>Text</b> opens your phone's Messages app with it filled in; tap Send there. A text isn't saved here.`
+          : `To text ${esc(contactName(c))} instead, they need to add their mobile number in Care Hours.`}</p>
       </form>`;
     msgRendered = c.id;
     $("msgBack").addEventListener("click", () => { chatWith = null; renderAll(); });
     $("msgCompose").addEventListener("submit", sendMessage);
-    $("msgBody").addEventListener("input", e => { msgDraft[c.id] = e.target.value; });
+    $("msgBody").addEventListener("input", e => {
+      msgDraft[c.id] = e.target.value;
+      if ($("msgText")) $("msgText").href = smsLink(c.phone, e.target.value.trim());   // Text carries what's typed
+    });
   }
   $("msgErr").textContent = msgUi.err;
   $("msgSend").disabled = msgUi.busy;
