@@ -7,7 +7,7 @@
 //   Deleted shifts are kept as markers (deleted: true) so other devices learn about the delete.
 let shifts = [];
 let sched = [];              // schedule entries: {id, kind: weekly|once|off, person, days, onDate, untilDate, startTime, endTime, note, ...}
-let view = "mine";           // "mine" (your own clock) | "plan" (your schedule) | "all" (every shift shared with you) | "shared" (one patient)
+let view = "mine";           // "mine" (your own clock) | "plan" (your schedule) | "all" / "pplan" (payer's Shifts / Schedule) | "shared" (Caregivers tab) | "msgs" (Messages)
 let planForm = null;         // the schedule entry being added or edited
 let planConfirm = null;      // schedule entry id waiting for "Delete?"
 let sharedSched = [];        // schedule entries shared with me (read only), each with .owner
@@ -28,7 +28,8 @@ let sync = { state: "off", last: null, msg: "" };   // off | syncing | ok | wait
 let signin = { step: "email", email: "", busy: false, err: "", info: "" };
 let shares = [];             // [{email, person}]: who sees which of my patients
 let profile = { display_name: "" };
-let shareUi = { err: "", ok: "", confirm: null, busy: false, savedName: false, person: "", email: "" };
+let nameSavedNow = null;   // the name saved during this sign-in, if any
+let shareUi = { err: "", ok: "", confirm: null, busy: false, savedName: false, nameErr: "", person: "", email: "" };
 let signoutConfirm = false;
 let rangeMode = "week";       // the period shown: "week", "2weeks" (this week and the next) or "month"
 let selDay = null;           // day opened from the week chart ("YYYY-MM-DD")

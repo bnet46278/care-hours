@@ -250,3 +250,35 @@ button.day[aria-pressed="true"] { background: var(--surface); box-shadow: 0 0 0 
 .divider { border: 0; border-top: 1px solid var(--line); margin: 0; width: 100%; }
 .ok-msg { color: var(--accent); font-size: 0.92rem; }
 input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem; }
+
+/* Messages */
+.msgview #clock, .msgview #weekCard, .msgview #plan, .msgview #planShared, .msgview #logSection,
+.msgview #byCaregiver, .msgview #myPatientWrap, .msgview #ownerPickWrap, .msgview #sharedHead { display: none !important; }
+.tabs button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; white-space: nowrap; }
+.badge { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px;
+  border-radius: 10px; background: var(--live); color: #fff; font-size: 0.75rem; font-weight: 700; line-height: 1; }
+.msgs { display: flex; flex-direction: column; gap: 12px; }
+.msgs[hidden] { display: none !important; }
+.contacts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.contact { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding: 4px 0; }
+.contact:first-child { border-top: 0; }
+.contact .open { flex: 1; min-width: 0; display: flex; justify-content: space-between; gap: 10px; text-align: left;
+  background: none; border: 0; padding: 10px 2px; min-height: 44px; }
+.contact .open.off { opacity: 0.75; }
+.contact .who { display: flex; flex-direction: column; min-width: 0; }
+.contact .who b { display: inline-flex; align-items: center; gap: 6px; }
+.contact .preview { color: var(--muted); font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.contact.unread .preview { color: var(--ink); font-weight: 700; }
+.contact .when { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
+.textbtn { text-decoration: none; display: inline-flex; align-items: center; color: var(--accent); font-weight: 700; }
+.chathead { display: flex; flex-direction: column; gap: 4px; }
+.chathead .link { align-self: flex-start; }
+.chathead h2 { display: inline-flex; align-items: center; gap: 8px; }
+.thread { display: flex; flex-direction: column; gap: 6px; max-height: 55vh; overflow-y: auto; padding: 4px 2px; }
+.msgday { align-self: center; color: var(--muted); font-size: 0.78rem; font-weight: 700; margin: 8px 0 2px; }
+.bubble { max-width: 82%; padding: 8px 12px; border-radius: 16px; overflow-wrap: anywhere; }
+.bubble .body { white-space: pre-wrap; }
+.bubble.theirs { align-self: flex-start; background: var(--bg); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+.bubble.mine { align-self: flex-end; background: var(--accent); color: var(--accent-ink); border-bottom-right-radius: 4px; }
+.bubble .meta { font-size: 0.72rem; opacity: 0.8; margin-top: 2px; text-align: right; }
+.compose textarea { resize: vertical; min-height: 72px; }

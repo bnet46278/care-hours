@@ -18,6 +18,7 @@ It works two ways:
 | `js/schedule.js` | Schedule math: turns repeating shifts and time off into real hours (no screen code) |
 | `js/storage.js` | Saving on the device and syncing with the online database |
 | `js/sharing.js` | Signing in, sharing patients, loading what's shared with you |
+| `js/messages.js` | The Messages tab and the Text button |
 | `js/shifts-view.js` | The Shifts screen: clock, week summary, shift list, CSV |
 | `js/schedule-view.js` | The Schedule screen and the schedule payers see |
 | `js/app.js` | Tabs, drawing the page, and starting the app (loaded last) |
@@ -54,7 +55,9 @@ The scripts are plain browser scripts with no build step. They share one set of 
 ## Tabs
 
 - **Caregivers:** **Shifts** (clock in and out, log missed shifts) and **Schedule** (repeating shifts, one-time shifts, time off).
-- **Payers:** **Shifts** (every shift shared with them, from all caregivers) and **Caregivers** (all caregivers, or pick one). Both show the schedule and scheduled vs worked hours. Payers can't change anything.
+- **Payers:** **Shifts** (every shift shared with them, from all caregivers) and **Schedule** (what's scheduled), with a picker at the top for all caregivers or one. Payers can't change anything.
+- **Messages** (both sides, once a patient is shared): a conversation with each person you share with, or who shares with you. New messages appear right away while the app is open, and the tab shows how many are unread. Messages need a connection; one that can't be sent stays in the box. A payer who hasn't signed in to Care Hours yet is listed but can't get messages until they do.
+- **Text button:** anyone can add a mobile number on their account card. The people they share with then get a **Text** button in Messages that opens the phone's own Messages app, addressed to them.
 - **Time off wins.** A scheduled shift during the caregiver's time off is skipped and doesn't count as scheduled. **Skip this day** on a repeating shift adds time off for just that shift. Payers see time off only as "unavailable".
 
 ## Testing
@@ -68,11 +71,14 @@ The `tests` folder has automated Playwright tests that use the app like a caregi
 - Every shift has a patient. Sharing is per patient: a payer sees only shifts whose patient name matches what you shared. Capitals and extra spaces don't matter ("Mom" and " mom" match), but spelling does.
 - Access rules in the database (row-level security) make sure each person can change only their own shifts, and payers can read only the patients shared with them.
 - Free Supabase projects pause after about a week with no use. Opening the dashboard wakes them.
-- Notes may contain health details. Supabase's free plan isn't set up for HIPAA, so keep notes general if that matters for your situation.
+- Only the sender and the recipient can read a message. Messages can't be edited or deleted, and only the recipient can mark one read. A mobile number is seen only by the people you share with (or who share with you).
+- Notes and messages may contain health details. Supabase's free plan isn't set up for HIPAA, so keep notes general if that matters for your situation.
 
 ## Updating the database
 
 If you change `setup.sql` (or pull a new version of it), run the whole file again in the Supabase SQL Editor. It's safe to run more than once.
+
+Version 4 of `setup.sql` adds messages and mobile numbers. Until you run it, the app works as before and the Messages tab stays hidden.
 
 - **Version 3 (schedule):** adds the schedule table. Run the whole file again; nothing existing is changed.
 - **Version 2 (per-patient sharing):** shares made with version 1 covered all of a caregiver's hours. Running version 2 removes those shares, so share again by patient.

@@ -48,11 +48,14 @@
     <button role="tab" id="tabMine" aria-selected="true">Shifts</button>
     <button role="tab" id="tabPlan" aria-selected="false">Schedule</button>
     <button role="tab" id="tabShared" aria-selected="false">Caregivers</button>
+    <button role="tab" id="tabMsgs" aria-selected="false" hidden>Messages<span class="badge" id="msgBadge" hidden></span></button>
   </div>
+
+  <section class="msgs listcard" id="msgs" hidden></section>
 
   <section class="clock" id="clock" aria-live="polite"></section>
 
-  <section class="week listcard" aria-label="Hours by period">
+  <section class="week listcard" id="weekCard" aria-label="Hours by period">
     <div class="seg3" id="rangePick" role="group" aria-label="Show hours for">
       <button type="button" data-range="week" aria-pressed="true">Week</button>
       <button type="button" data-range="2weeks" aria-pressed="false">2 weeks</button>
@@ -131,6 +134,7 @@
 <script src="js/schedule.js"></script>
 <script src="js/storage.js"></script>
 <script src="js/sharing.js"></script>
+<script src="js/messages.js"></script>
 <script src="js/shifts-view.js"></script>
 <script src="js/schedule-view.js"></script>
 <script src="js/app.js"></script>

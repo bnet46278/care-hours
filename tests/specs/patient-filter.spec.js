@@ -57,7 +57,7 @@ test.describe("Patient picker for caregivers", () => {
     await app.addShift({ date: "2026-11-02", start: "09:00", end: "12:00", patient: "Mom" });
     await app.$("#prevWeek").click();
     await app.$("#myPatient").selectOption({ label: "Mom" });
-    await expect(app.$("#list")).toHaveText("No shifts for Mom this week.");
+    await expect(app.$("#list")).toHaveText("No shifts for Mom last week.");
   });
 
   test("payers don't see it", async ({ openApp }) => {

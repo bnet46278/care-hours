@@ -107,14 +107,15 @@ test.describe("Schedule", () => {
 
     const payer = await openApp();
     await payer.signIn("payer@example.com");
+    await expect(payer.$("#byCaregiver")).toContainText("Scheduled9h 30m [9.50]");
+    await payer.tab("Schedule");                       // payers see the schedule on their Schedule tab
     const plan = payer.$("#planShared");
     await expect(plan).toContainText("Scheduled this week");
     await expect(plan).toContainText("Mom · by Cynda B. · bring lunch");
     await expect(plan).toContainText("Cynda B. unavailable");
     await expect(plan).toContainText("Caregiver unavailable");
     await expect(plan).not.toContainText("Dad");
-    await expect(plan.locator("button")).toHaveCount(0);
-    await expect(payer.$("#byCaregiver")).toContainText("of 9h 30m [9.50] scheduled");
+    await expect(plan.locator("[data-pact]")).toHaveCount(0);   // nothing to edit, skip or delete
 
     await payer.$("#nextWeek").click();
     await expect(plan).toContainText("Scheduled next week");

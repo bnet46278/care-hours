@@ -2,7 +2,8 @@
 //
 //   db       a fresh fake online database for each test (see fake-db.js)
 //   openApp  opens Care Hours in its own browser window, like a separate phone.
-//            Options: sync (online sync on, default true), slowDb (ms each database call takes), serviceWorkers.
+//            Options: sync (online sync on, default true), slowDb (ms each database call takes, or a function of the call), serviceWorkers,
+//            cardsOpen (open the Shifts and Schedule cards, default true).
 //            Windows opened in the same test share one database, so a caregiver and a payer can interact.
 //
 // Every window starts on Wednesday, Nov 4, 2026, 8:00 PM New York time, and the clock stays there,
@@ -18,18 +19,31 @@ const SYNC_ON = 'window.CARE_HOURS_CONFIG = { supabaseUrl: "https://fake-project
 const SYNC_OFF = 'window.CARE_HOURS_CONFIG = { supabaseUrl: "", supabaseAnonKey: "" };';
 
 const test = base.extend({
-  db: async ({}, use) => { await use(new FakeDb()); },
+  db: async ({}, use) => { await use(new FakeDb({ now: NOW })); },
 
   openApp: async ({ browser, db }, use, testInfo) => {
     const windows = [];
+    const pages = [];
     const errors = [];
-    async function openApp({ sync = true, serviceWorkers = "block", slowDb = 0 } = {}) {
+    // Like Supabase Realtime: after a message is sent or read, tell every open window.
+    db.onChange = table => {
+      if (table !== "messages") return;
+      for (const p of pages) p.evaluate(() => window.__fakeRealtime && window.__fakeRealtime()).catch(() => {});
+    };
+    async function openApp({ sync = true, serviceWorkers = "block", slowDb = 0, cardsOpen = true } = {}) {
       const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = testInfo.project.use;
       const context = await browser.newContext({
         baseURL: "http://localhost:4173", timezoneId: "America/New_York", acceptDownloads: true, serviceWorkers,
         viewport, userAgent, deviceScaleFactor, isMobile, hasTouch,
       });
       await context.clock.setFixedTime(NOW);
+      // The Shifts and Schedule cards start collapsed in the app. Most tests want to see the lists,
+      // so open them unless a test asks for the real first-visit state (cardsOpen: false).
+      if (cardsOpen) await context.addInitScript(() => {
+        try {
+          for (const k of ["care-hours-list-open", "care-hours-sched-open"]) if (localStorage.getItem(k) === null) localStorage.setItem(k, "1");
+        } catch (e) {}
+      });
       const state = { offline: false, inflight: 0 };
       // Never reach the real Supabase project, whatever config.js says.
       await context.route(/supabase\.co/, r => r.abort());
@@ -40,13 +54,16 @@ const test = base.extend({
         if (state.offline) return r.abort("internetdisconnected");
         state.inflight++;
         try {
-          if (slowDb) await new Promise(ok => setTimeout(ok, slowDb));   // a slow connection
-          const res = db.handle(JSON.parse(r.request().postData()));
+          const q = JSON.parse(r.request().postData());
+          const res = db.handle(q);   // the database answers right away...
+          const wait = typeof slowDb === "function" ? slowDb(q) : slowDb;
+          if (wait) await new Promise(ok => setTimeout(ok, wait));   // ...and the answer is slow to arrive
           await r.fulfill({ contentType: "application/json", body: JSON.stringify(res) });
         } finally { state.inflight--; }
       });
       const page = await context.newPage();
       page.on("pageerror", e => errors.push(String(e)));
+      pages.push(page);
       await page.goto("/");
       const app = new CareHours(page, state);
       windows.push(context);
@@ -74,7 +91,7 @@ class CareHours {
   async setName(name) {
     await this.$("#dispName").fill(name);
     await this.$("#nameForm button").click();
-    await expect(this.$("#nameForm")).toContainText("Name saved.");
+    await expect(this.$("#nameForm")).toContainText("Saved.");
   }
   // Wait until the app has stopped talking to the database (no calls for a moment).
   async settle() {

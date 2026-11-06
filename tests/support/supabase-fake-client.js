@@ -1,6 +1,8 @@
 // Stand-in for the supabase-js library, loaded into the app during tests instead of the real one.
 // It sends every request to https://fake-supabase.test/q, which the tests answer from the fake database.
 // Sign-in codes: 123456 always works; anything else is "expired or invalid".
+// Live updates: the tests call window.__fakeRealtime() after each change to the messages table,
+// which runs the app's channel callbacks the way Supabase Realtime would.
 (function () {
   const API = "https://fake-supabase.test/q";
   const call = q => fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(q) })
@@ -33,11 +35,13 @@
         eq(c, v) { q.filters.push([c, "eq", v]); return b; },
         neq(c, v) { q.filters.push([c, "neq", v]); return b; },
         in(c, v) { q.filters.push([c, "in", v]); return b; },
+        is(c, v) { q.filters.push([c, "is", v]); return b; },
         order(c) { q.order = c; return b; },
         range(a, z) { q.range = [a, z]; return b; },
         maybeSingle() { q.single = true; return b; },
         upsert(rows) { q.op = "upsert"; q.rows = Array.isArray(rows) ? rows : [rows]; return b; },
         insert(rows) { q.op = "insert"; q.rows = Array.isArray(rows) ? rows : [rows]; return b; },
+        update(vals) { q.op = "update"; q.vals = vals; return b; },
         delete() { q.op = "delete"; return b; },
         then(res, rej) {
           const u = session && session.user;
@@ -46,6 +50,18 @@
       };
       return b;
     }
-    return { auth, from };
+    const send = q => { const u = session && session.user; return call({ ...q, uid: u && u.id, email: u && u.email }); };
+    const rpc = (name, args) => send({ op: "rpc", name, args: args || {} });
+    const channels = new Set();
+    window.__fakeRealtime = () => { for (const ch of channels) if (ch.live) ch.cbs.forEach(cb => cb({})); };
+    function channel(name) {
+      const ch = { name, cbs: [], live: false,
+        on(type, filter, cb) { ch.cbs.push(cb); return ch; },
+        subscribe(status) { ch.live = true; channels.add(ch); if (status) setTimeout(() => status("SUBSCRIBED"), 0); return ch; },
+      };
+      return ch;
+    }
+    async function removeChannel(ch) { ch.live = false; channels.delete(ch); return "ok"; }
+    return { auth, from, rpc, channel, removeChannel };
   } };
 })();

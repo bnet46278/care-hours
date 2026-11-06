@@ -42,14 +42,16 @@ test.describe("Sharing with payers", () => {
     const payer = await openApp();
     await payer.signIn("payer@example.com");
 
+    // Payers get Shifts, Schedule and Messages tabs, and no time clock.
+    await expect(payer.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Messages"]);
     await expect(payer.page.getByRole("tab", { name: "Shifts" })).toHaveAttribute("aria-selected", "true");
     await expect(payer.$("#clock")).toBeHidden();
     await expect(payer.$("#addBtn")).toBeHidden();
-    await expect(payer.page.getByRole("tab", { name: "Schedule" })).toBeHidden();
 
     await expect(payer.weekTotal()).toHaveText("16h 30m");
-    await expect(payer.$("#byCaregiver")).toContainText("Ann L.5h 00m [5.00]");
-    await expect(payer.$("#byCaregiver")).toContainText("Cynda B.11h 30m [11.50]");
+    const hours = name => payer.$(".bycg-item").filter({ hasText: name });
+    await expect(hours("Ann L.")).toContainText("Worked5h 00m [5.00]");
+    await expect(hours("Cynda B.")).toContainText("Worked11h 30m [11.50]");
     await expect(payer.shiftRows()).toHaveCount(4);
     await expect(payer.$("#list")).toContainText("Mom · by Ann L. · morning meds");
     await expect(payer.$("#list")).not.toContainText("Aunt Jo");
@@ -57,32 +59,33 @@ test.describe("Sharing with payers", () => {
     await expect(payer.$("[data-act=edit], [data-act=del]")).toHaveCount(0);
   });
 
-  test("on the payer's Shifts tab the shifts come before the schedule", async ({ openApp }) => {
-    await twoCaregivers(openApp);
-    const payer = await openApp();
-    await payer.signIn("payer@example.com");
-    const order = () => payer.page.evaluate(() => [...document.querySelectorAll("#logSection, #planShared")].map(e => e.id));
-    await expect(payer.weekTotal()).toHaveText("16h 30m");   // the payer view has loaded
-    await expect.poll(order).toEqual(["logSection", "planShared"]);
-    await payer.tab("Caregivers");
-    await expect.poll(order).toEqual(["planShared", "logSection"]);
-    await payer.tab("Shifts");
-    await expect.poll(order).toEqual(["logSection", "planShared"]);
-  });
-
-  test("Caregivers tab shows all caregivers, or the one picked", async ({ openApp }) => {
+  test("the payer's Shifts tab shows shifts, and the Schedule tab shows the schedule", async ({ openApp }) => {
     await twoCaregivers(openApp);
     const payer = await openApp();
     await payer.signIn("payer@example.com");
     await expect(payer.weekTotal()).toHaveText("16h 30m");
-    await payer.tab("Caregivers");
+    await expect(payer.$("#logSection")).toBeVisible();
+    await expect(payer.$("#planShared")).toBeHidden();
+    await payer.tab("Schedule");
+    await expect(payer.page.getByRole("tab", { name: "Schedule" })).toHaveAttribute("aria-selected", "true");
+    await expect(payer.$("#planShared")).toBeVisible();
+    await expect(payer.$("#logSection")).toBeHidden();
+    await expect(payer.$("#weekDecimal")).toContainText("hours scheduled");
+  });
 
-    // All caregivers is the default.
+  test("the caregiver picker at the top filters both payer tabs", async ({ openApp }) => {
+    await twoCaregivers(openApp);
+    const payer = await openApp();
+    await payer.signIn("payer@example.com");
+    await expect(payer.weekTotal()).toHaveText("16h 30m");
+
+    // The picker sits at the top, above the hours box and the tabs. All caregivers is the default.
+    const order = await payer.page.evaluate(() => [...document.querySelectorAll("#ownerPickWrap, #byCaregiver, #tabs")].map(e => e.id));
+    expect(order).toEqual(["ownerPickWrap", "byCaregiver", "tabs"]);
     await expect(payer.$("#ownerPick option")).toHaveText(["All caregivers", "Ann L.", "Cynda B."]);
     await expect(payer.$("#ownerPick")).toHaveValue("all");
     await expect(payer.$("#sharedWho")).toContainText("Ann L. · caring for Dad, Mom");
     await expect(payer.$("#sharedWho")).toContainText("Cynda B. · caring for Mom");
-    await expect(payer.weekTotal()).toHaveText("16h 30m");
 
     // One caregiver: only their shifts, for every patient they share.
     await payer.$("#ownerPick").selectOption({ label: "Ann L." });
@@ -98,6 +101,12 @@ test.describe("Sharing with payers", () => {
     expect(csv.text).toContain("Total for Ann L.,,,5.00,,Ann L.,");
     expect(csv.text).not.toContain("Cynda B.");
 
+    // The choice carries over to the Schedule tab.
+    await payer.tab("Schedule");
+    await expect(payer.$("#ownerPick")).toHaveValue(await payer.$("#ownerPick").inputValue());
+    await expect(payer.$("#ownerPick option:checked")).toHaveText("Ann L.");
+
+    await payer.tab("Shifts");
     await payer.$("#ownerPick").selectOption({ label: "Cynda B." });
     await expect(payer.weekTotal()).toHaveText("11h 30m");
     await expect(payer.$("#list")).not.toContainText("Aunt Jo");   // still only patients shared with this payer
@@ -127,9 +136,30 @@ test.describe("Sharing with payers", () => {
     await expect(payer.$("#list")).not.toContainText("Mom");
     await expect(payer.weekTotal()).toHaveText("3h 00m");   // only Dad is left
     // With one caregiver left, the picker still shows.
-    await payer.tab("Caregivers");
     await expect(payer.$("#ownerPick")).toBeVisible();
     await expect(payer.$("#ownerPick option")).toHaveText(["All caregivers", "Ann L."]);
+  });
+
+  test("a name saved right after signing in for the first time is kept", async ({ openApp, db }) => {
+    // The app is still loading the account (a slow profile read) when the name is saved.
+    const app = await openApp({ slowDb: q => (q.table === "profiles" && q.op === "select" ? 1500 : 0) });
+    await app.signIn("cynda@example.com");
+    await app.setName("Cynda B.");
+    await app.settle();
+    expect(db.rows("profiles").find(r => r.email === "cynda@example.com").display_name).toBe("Cynda B.");
+    await expect(app.$("#dispName")).toHaveValue("Cynda B.");
+  });
+
+  test("a name being typed survives the account card redrawing", async ({ openApp, db }) => {
+    const app = await openApp();
+    await app.signIn("ann@example.com");
+    await app.settle();
+    await app.$("#dispName").fill("Ann L.");
+    await app.page.evaluate(() => renderSync());   // what happens when sign-in finishes loading
+    await expect(app.$("#dispName")).toHaveValue("Ann L.");
+    await app.$("#nameForm button").click();
+    await expect(app.$("#nameForm")).toContainText("Saved.");
+    expect(db.rows("profiles").find(r => r.email === "ann@example.com").display_name).toBe("Ann L.");
   });
 
   test("the database refuses a payer who tries to change shifts", async ({ openApp, db }) => {

@@ -10,6 +10,13 @@
 --     never change them. Shifts with no patient name are never shared.
 --   * Everyone else sees nothing.
 --
+-- Version 4 adds messages between caregivers and payers, and a phone number for the Text button.
+--   * Two people can message each other only when one of them shares a patient with the other.
+--   * Only the sender and the recipient can read a message. Nobody can edit or delete one, and
+--     only the recipient can mark it read.
+--   * A phone number is seen only by the people you share with (or who share with you).
+-- If you ran version 3, run this whole file again. Nothing you already have is changed.
+--
 -- Version 3 adds the schedule (repeating shifts, one-time shifts and time off).
 -- Payers see scheduled shifts for their patient, and see a caregiver's time off only as "unavailable".
 --
@@ -57,6 +64,9 @@ create table if not exists public.profiles (
   updated_at    timestamptz not null default now()
 );
 
+-- Version 4: a mobile number, so the people you share with can text you from the app.
+alter table public.profiles add column if not exists phone text not null default '' check (char_length(phone) <= 30);
+
 create index if not exists shares_viewer_email_idx on public.shares (viewer_email);
 
 -- The schedule: what a caregiver plans to work, and when they can't.
@@ -84,6 +94,18 @@ create table if not exists public.schedule (
   check (deleted or kind <> 'weekly' or (cardinality(days) between 1 and 7 and days <@ array[0,1,2,3,4,5,6]::smallint[])),
   check (until_date is null or until_date >= on_date)
 );
+
+-- Messages between a caregiver and a payer. The sender and the time are filled in by the database.
+create table if not exists public.messages (
+  id          uuid        primary key default gen_random_uuid(),
+  sender      uuid        not null default auth.uid() references auth.users (id) on delete cascade,
+  recipient   uuid        not null references auth.users (id) on delete cascade,
+  body        text        not null check (char_length(btrim(body)) between 1 and 2000),
+  created_at  timestamptz not null default now(),
+  read_at     timestamptz
+);
+create index if not exists messages_recipient_idx on public.messages (recipient, created_at);
+create index if not exists messages_sender_idx on public.messages (sender, created_at);
 
 -- ---------- Helper ----------
 
@@ -119,6 +141,35 @@ as $$
     select 1 from public.shares s
     where s.owner = the_owner and s.viewer_email = public.my_email() and public.my_email() <> ''
   )
+$$;
+
+-- The people you can message: everyone you share a patient with, and everyone who shares one with you.
+-- A payer who hasn't signed in to Care Hours yet is listed with no id (they can't receive messages yet).
+-- It reads emails from Supabase's own sign-in records, which people can't change, so nobody can
+-- pretend to be a payer by typing that payer's email somewhere.
+create or replace function public.my_contacts()
+returns table (id uuid, email text, display_name text, phone text, role text)
+language sql stable security definer set search_path = public
+as $$
+  select distinct on (c.email) c.id, c.email, coalesce(p.display_name, ''), coalesce(p.phone, ''), c.role
+  from (
+    select u.id, s.viewer_email as email, 'payer'::text as role
+      from public.shares s left join auth.users u on lower(u.email) = s.viewer_email
+      where s.owner = auth.uid()
+    union
+    select s.owner, lower(u.email), 'caregiver'::text
+      from public.shares s join auth.users u on u.id = s.owner
+      where s.viewer_email = public.my_email() and public.my_email() <> '' and s.owner <> auth.uid()
+  ) c
+  left join public.profiles p on p.id = c.id
+  order by c.email, c.role
+$$;
+
+-- True when the signed-in person may send a message to "other".
+create or replace function public.can_message(other uuid) returns boolean
+language sql stable security definer set search_path = public
+as $$
+  select other is not null and other <> auth.uid() and exists (select 1 from public.my_contacts() c where c.id = other)
 $$;
 
 -- ---------- Access rules (row level security) ----------
@@ -183,8 +234,44 @@ create policy "shared viewers read schedule" on public.schedule
     or (kind = 'off' and public.is_shared_with_me(owner))
   );
 
+-- Messages: only the sender and the recipient can read them.
+alter table public.messages enable row level security;
+drop policy if exists "people read their own messages" on public.messages;
+create policy "people read their own messages" on public.messages
+  for select to authenticated
+  using (sender = auth.uid() or recipient = auth.uid());
+
+-- Messages: you can send only as yourself, and only to someone you share with (or who shares with you).
+drop policy if exists "send to people you share with" on public.messages;
+create policy "send to people you share with" on public.messages
+  for insert to authenticated
+  with check (sender = auth.uid() and public.can_message(recipient));
+
+-- Messages: the recipient can mark a message read (and change nothing else, see the grants below).
+drop policy if exists "recipient marks messages read" on public.messages;
+create policy "recipient marks messages read" on public.messages
+  for update to authenticated
+  using (recipient = auth.uid())
+  with check (recipient = auth.uid());
+
+-- New messages appear right away on the other person's screen.
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+     and not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'messages') then
+    alter publication supabase_realtime add table public.messages;
+  end if;
+end $$;
+
 -- Nobody who is signed out can touch any of this.
 revoke all on public.shifts, public.shares, public.profiles, public.schedule from anon;
 grant select, insert, update, delete on public.shifts, public.shares, public.profiles, public.schedule to authenticated;
 grant execute on function public.my_email(), public.same_person(text), public.is_shared_with_me(uuid), public.can_view_shift(uuid, text) to authenticated;
 revoke execute on function public.is_shared_with_me(uuid), public.can_view_shift(uuid, text) from anon, public;
+-- Messages can be read, sent (only who it's to and what it says) and marked read; never edited or deleted.
+revoke all on public.messages from anon, authenticated;
+grant select on public.messages to authenticated;
+grant insert (recipient, body) on public.messages to authenticated;
+grant update (read_at) on public.messages to authenticated;
+grant execute on function public.my_contacts(), public.can_message(uuid) to authenticated;
+revoke execute on function public.my_contacts(), public.can_message(uuid) from anon, public;

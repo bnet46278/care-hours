@@ -11,6 +11,14 @@ function renderTabs() {
   $("tabMine").setAttribute("aria-selected", String(view === "mine" || view === "all"));
   $("tabPlan").setAttribute("aria-selected", String(view === "plan" || view === "pplan"));
   $("tabShared").setAttribute("aria-selected", String(view === "shared"));
+  // Messages, for anyone who shares with someone (or who someone shares with).
+  const msgs = view === "msgs", unread = unreadCount();
+  $("tabMsgs").hidden = !msgTab();
+  $("tabMsgs").setAttribute("aria-selected", String(msgs));
+  $("tabMsgs").setAttribute("aria-label", unread ? `Messages, ${unread} unread` : "Messages");
+  $("msgBadge").hidden = !unread;
+  $("msgBadge").textContent = unread || "";
+  document.body.classList.toggle("msgview", msgs);
   const ro = readOnly(), plan = view === "plan", schedTab = plan || view === "pplan";
   $("sharedHead").hidden = !ro;
   $("clock").hidden = ro || plan;
@@ -41,6 +49,7 @@ function renderTabs() {
 }
 $("tabMine").addEventListener("click", () => { view = payerMode() ? "all" : "mine"; weekOffset = 0; closeForm(); closePlanForm(); renderAll(); if (view === "all") refreshShared(); });
 $("tabPlan").addEventListener("click", () => { view = payerMode() ? "pplan" : "plan"; weekOffset = 0; closeForm(); renderAll(); if (view === "pplan") refreshShared(); });
+$("tabMsgs").addEventListener("click", () => { view = "msgs"; closeForm(); closePlanForm(); renderAll(); refreshMessaging(); });
 $("tabShared").addEventListener("click", () => { view = "shared"; weekOffset = 0; closeForm(); closePlanForm(); renderAll(); refreshShared(); });
 $("ownerPick").addEventListener("change", e => { sharedCaregiver = e.target.value; renderAll(); });
 // ---------- collapsible Shifts and Schedule lists ----------
@@ -68,7 +77,7 @@ function renderAll() {
     const typing = document.activeElement && $("clock").contains(document.activeElement) && document.activeElement.tagName !== "BUTTON";
     if (!typing || !!active() !== $("clock").classList.contains("on")) renderClock();
   }
-  renderWeek(); renderList(); renderPlan(); renderPlanShared();
+  renderWeek(); renderList(); renderPlan(); renderPlanShared(); renderMessages();
   const typingSync = document.activeElement && $("sync").contains(document.activeElement) && document.activeElement.tagName === "INPUT";
   if (!typingSync) renderSync(); else renderSyncState();
 }
