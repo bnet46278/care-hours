@@ -71,6 +71,8 @@ test.describe("Week / 2 weeks / Month", () => {
     await expect(app.$("#weekTitle")).toHaveText("Last week and this week");
     await expect(app.$("#weekDecimal")).toContainText("Oct 26–Nov 8");
     await expect(app.weekTotal()).toHaveText("6h 00m");
+    await expect(app.$("#bycgDates")).toHaveText("Last week and this week · Oct 26 – Nov 8");
+    await expect(app.$(".bycg-total")).toContainText("Worked6h 00m [6.00]");
     await expect(app.shiftRows()).toHaveCount(3);
 
     await app.$("#prevWeek").click();
@@ -90,6 +92,7 @@ test.describe("Week / 2 weeks / Month", () => {
     await expect(app.$("#bars button.day").first().locator(".dname")).toHaveText("1");   // Nov 1 is a Sunday...
     await expect(app.$("#bars .day.blank")).toHaveCount(6 + 6);                         // ...after six blanks, and the last row is filled out
     await expect(app.weekTotal()).toHaveText("3h 00m");
+    await expect(app.$("#bycgDates")).toHaveText("November 2026 · Nov 1 – Nov 30");
     const csv = await app.downloadCsv();
     expect(csv.name).toBe("care-hours-month-2026-11.csv");
 

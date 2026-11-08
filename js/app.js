@@ -70,14 +70,15 @@ $("sharedRefresh").addEventListener("click", refreshShared);
 function renderAll() {
   $("today").textContent = dayFmt.format(new Date());
   seedColors();
-  $("people").innerHTML = patients().map(p => `<option value="${esc(p)}"></option>`).join("");
+  ensureCards();
+  refreshPatientPickers();
   renderTabs();
   if (view === "mine") {
     // Keep the clock card intact while someone is typing in it.
     const typing = document.activeElement && $("clock").contains(document.activeElement) && document.activeElement.tagName !== "BUTTON";
     if (!typing || !!active() !== $("clock").classList.contains("on")) renderClock();
   }
-  renderWeek(); renderHeldNote(); renderList(); renderPlan(); renderPlanShared(); renderMessages();
+  renderWeek(); renderHeldNote(); renderList(); renderPlan(); renderPlanShared(); renderPatients(); renderMessages();
   const typingSync = document.activeElement && $("sync").contains(document.activeElement) && document.activeElement.tagName === "INPUT";
   if (!typingSync) renderSync(); else renderSyncState();
 }
@@ -92,6 +93,8 @@ setInterval(() => {
 
 // ================= start =================
 shifts = loadLocal();
+pcards = loadCards();
+patientsOpen = getLS(LS_PATIENTS_OPEN) === "1";
 syncOpen = getLS(LS_SYNC_OPEN) !== "0";
 rangeMode = ["week", "2weeks", "month"].includes(getLS(LS_RANGE)) ? getLS(LS_RANGE) : "week";   // open until you collapse it
 // The Shifts and Schedule cards start collapsed; once you open one, it stays open on this device.

@@ -41,6 +41,7 @@ To run one file or one test: `npx playwright test specs/schedule.spec.js`, or `n
 | `specs/layout.spec.js` | Shifts and Schedule cards collapsed by default, Week / 2 weeks / Month, page order, the update notice |
 | `specs/messages.spec.js` | Messages both ways, live updates and unread counts, unsent messages, who can message whom, the database keeping messages private, the Text button |
 | `specs/hold-weeks.spec.js` | Holding each week: payers can't see it until it's shared, sharing can't be undone (also in the database), catching up on older weeks, turning it off and on, an older database |
+| `specs/patients.spec.js` | Patient cards: details, age, "same info" payer, checks, removing; picking patients from the list and + New patient; cards for patients already in use; syncing; payers viewing and editing; what the database allows; an older database |
 | `specs/offline.spec.js` | The app opens and works with no connection |
 | `unit/schedule-math.spec.js` | The schedule math on its own, including the night the clocks fall back |
 
@@ -50,7 +51,7 @@ To run one file or one test: `npx playwright test specs/schedule.spec.js`, or `n
 | --- | --- |
 | `playwright.config.js` | Settings: browsers, time zone, and the small web server below |
 | `serve.js` | Serves the app folder at http://localhost:4173 while the tests run |
-| `support/fixtures.js` | `openApp()` opens the app like a separate phone, plus helpers such as `signIn`, `addShift`, `share`, `addToSchedule`. Options: `sync: false` (no online account), `slowDb` (a slow connection), `cardsOpen: false` (the Shifts and Schedule cards start collapsed, as on a first visit; most tests open them) |
+| `support/fixtures.js` | `openApp()` opens the app like a separate phone, plus helpers such as `signIn`, `addShift`, `share`, `addToSchedule`, `addPatient`. Patients are picked from the patient list, so `addShift` and the others add the patient first if needed. Options: `sync: false` (no online account), `slowDb` (a slow connection), `cardsOpen: false` (the Shifts and Schedule cards start collapsed, as on a first visit; most tests open them) |
 | `support/fake-db.js` | The fake database and its access rules |
 | `support/supabase-fake-client.js` | Loaded into the app instead of the real Supabase library. Sign-in code `123456` always works |
 

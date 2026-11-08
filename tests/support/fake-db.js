@@ -7,24 +7,26 @@
 //     can read a message, and only the recipient can mark it read (nothing else can change)
 //   * a caregiver who holds weeks shows payers only the shifts that start before their shared_through,
 //     and shared_through can never move back (version 5)
+//   * patient cards: the caregiver owns them; payers who can see that patient can read and edit them,
+//     but can't add, rename or remove one (version 6)
 //   * signed-out visitors get nothing
 const { randomUUID } = require("crypto");
 
 // "Mom", "mom" and " Mom " are the same patient, as in setup.sql.
 const samePerson = p => String(p || "").replace(/\s+/g, " ").trim().toLowerCase();
-const KEYS = { shifts: ["owner", "id"], schedule: ["owner", "id"], shares: ["owner", "viewer_email", "person"], profiles: ["id"], messages: ["id"] };
-const OWNER = { shifts: "owner", schedule: "owner", shares: "owner", profiles: "id", messages: "sender" };
+const KEYS = { shifts: ["owner", "id"], schedule: ["owner", "id"], shares: ["owner", "viewer_email", "person"], profiles: ["id"], messages: ["id"], patients: ["owner", "id"] };
+const OWNER = { shifts: "owner", schedule: "owner", shares: "owner", profiles: "id", messages: "sender", patients: "owner" };
 // Columns people may set themselves, as granted in setup.sql (everything else is filled in by the database).
 const INSERT_COLS = { messages: ["recipient", "body"] };
 const UPDATE_COLS = { messages: ["read_at"] };
 
 class FakeDb {
   // now: the time the database clock starts at (each new row is a second later than the last).
-  // version: acts like a database set up with that version of setup.sql (4: no week holding; 3: also no messages or phone numbers).
-  constructor({ now = Date.now(), version = 5 } = {}) {
+  // version: acts like a database set up with that version of setup.sql (5: no patient cards; 4: also no week holding; 3: also no messages or phone numbers).
+  constructor({ now = Date.now(), version = 6 } = {}) {
     this.version = version;
     this.users = new Map();   // email -> id
-    this.tables = { shifts: [], schedule: [], shares: [], profiles: [], messages: [] };
+    this.tables = { shifts: [], schedule: [], shares: [], profiles: [], messages: [], patients: [] };
     this.clock = +now;
     this.onChange = null;     // called with the table name after a write, like Supabase's live updates
   }
@@ -74,6 +76,7 @@ class FakeDb {
     if (table === "shares") return r.owner === me.id || r.viewer_email === me.email;
     if (table === "profiles") return r.id === me.id || this.sharedWithMe(r.id, me);
     if (table === "messages") return r.sender === me.id || r.recipient === me.id;
+    if (table === "patients") return r.owner === me.id || this.canViewPatient(r.owner, r.person, me);
     return false;
   }
   canWrite(table, r, me) {
@@ -87,6 +90,12 @@ class FakeDb {
     }
     if (table === "messages" && !(String(r.body || "").trim().length >= 1 && String(r.body).trim().length <= 2000)) return "a message needs 1 to 2000 characters";
     if (table === "profiles" && String(r.phone || "").length > 30) return "phone is too long";
+    if (table === "patients") {
+      const t = String(r.person || "").trim();
+      if (!t || t.length > 100) return "a patient needs a name of 1 to 100 characters";
+      for (const [k, n] of [["address", 500], ["email", 200], ["phone", 30], ["notes", 5000], ["payer_name", 100], ["payer_address", 500], ["payer_email", 200], ["payer_phone", 30], ["payer_relationship", 100]])
+        if (String(r[k] || "").length > n) return `${k} is too long`;
+    }
     if (table === "shifts" && r.end_at && Date.parse(r.end_at) < Date.parse(r.start_at)) return "shift ends before it starts";
     if (table === "schedule" && !r.deleted) {
       if (r.kind === "off" && (r.person || r.note)) return "time off can't have a patient or a note";
@@ -109,7 +118,7 @@ class FakeDb {
       if (q.name === "my_contacts" && this.version >= 4) return { data: this.contacts(me), error: null };
       return { data: null, error: { code: "PGRST202", message: `Could not find the function public.${q.name}` } };
     }
-    const table = this.version < 4 && q.table === "messages" ? null : this.tables[q.table];
+    const table = (this.version < 4 && q.table === "messages") || (this.version < 6 && q.table === "patients") ? null : this.tables[q.table];
     if (this.version < 4 && q.table === "profiles" && (q.rows || []).some(r => "phone" in r))
       return { data: null, error: { code: "PGRST204", message: "Could not find the 'phone' column of 'profiles' in the schema cache" } };
     if (!table) return { data: null, error: { code: "PGRST205", message: `Could not find the table 'public.${q.table}'` } };
@@ -150,7 +159,18 @@ class FakeDb {
     }
     if (q.op === "update") {
       if (UPDATE_COLS[q.table] && Object.keys(q.vals).some(k => !UPDATE_COLS[q.table].includes(k))) return denied;
-      const mayUpdate = r => q.table === "messages" ? r.recipient === me.id : r[OWNER[q.table]] === me.id;
+      const mayUpdate = r => q.table === "messages" ? r.recipient === me.id
+        : q.table === "patients" ? r.owner === me.id || this.canViewPatient(r.owner, r.person, me)
+        : r[OWNER[q.table]] === me.id;
+      // The guard_patient_edit trigger: only the owner renames or removes a patient card.
+      if (q.table === "patients") for (const r of table) if (matches(r) && r.owner !== me.id && mayUpdate(r) &&
+          (("owner" in q.vals && q.vals.owner !== r.owner) || ("id" in q.vals && q.vals.id !== r.id) ||
+           ("deleted" in q.vals && !!q.vals.deleted !== !!r.deleted) || ("person" in q.vals && samePerson(q.vals.person) !== samePerson(r.person))))
+        return { data: null, error: { code: "42501", message: "Only the caregiver can rename or remove a patient" } };
+      for (const r of table) if (matches(r) && mayUpdate(r)) {
+        const bad = this.check(q.table, { ...r, ...q.vals });
+        if (bad) return { data: null, error: { code: "23514", message: bad } };
+      }
       for (const r of table) if (matches(r) && this.canRead(q.table, r, me) && mayUpdate(r)) Object.assign(r, q.vals);
       this.changed(q.table);
       return { data: null, error: null };

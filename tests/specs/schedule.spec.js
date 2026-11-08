@@ -26,7 +26,7 @@ test.describe("Schedule", () => {
     await expect(app.$("#pErr")).toHaveText("Pick at least one day of the week.");
     await app.$("#pCancel").click();
     await app.addToSchedule("once", { from: "2026-11-07", start: "08:00", end: "12:00" });
-    await expect(app.$("#pErr")).toHaveText("Enter the patient's name.");
+    await expect(app.$("#pErr")).toHaveText("Choose a patient.");
     await app.$("#pCancel").click();
     await app.addToSchedule("off", { from: "2026-11-06", until: "2026-11-05" });
     await expect(app.$("#pErr")).toHaveText("The last day must be on or after the first day.");

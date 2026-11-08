@@ -12,6 +12,14 @@ function normSched(e) {
     onDate: e.onDate, untilDate: e.untilDate || null, startTime: e.startTime || null, endTime: e.endTime || null,
     note: e.note || "", updatedAt: e.updatedAt || Date.now(), deleted: !!e.deleted, dirty: e.dirty !== false, failed: !!e.failed };
 }
+function normCard(c) {
+  const t = v => String(v ?? "");
+  return { id: String(c.id), person: t(c.person).replace(/\s+/g, " ").trim(), birthDate: /^\d{4}-\d\d-\d\d$/.test(c.birthDate || "") ? c.birthDate : null,
+    address: t(c.address), email: t(c.email), phone: t(c.phone), notes: t(c.notes),
+    payerSame: !!c.payerSame, payerName: t(c.payerName), payerAddress: t(c.payerAddress), payerEmail: t(c.payerEmail),
+    payerPhone: t(c.payerPhone), payerRel: t(c.payerRel),
+    updatedAt: c.updatedAt || Date.now(), deleted: !!c.deleted, dirty: c.dirty !== false, failed: !!c.failed };
+}
 function readLS(key, ok, norm) {
   let v = [];
   try { v = JSON.parse(localStorage.getItem(key) || "[]"); } catch (e) {}
@@ -20,8 +28,12 @@ function readLS(key, ok, norm) {
 // Shifts saved by the first version of the app have no sync fields yet; normShift fills them in.
 function loadLocal() { return readLS(LS_KEY, x => typeof x.start === "number", normShift); }
 function loadSched() { return readLS(LS_SCHED, x => ["weekly", "once", "off"].includes(x.kind) && /^\d{4}-\d\d-\d\d$/.test(x.onDate || ""), normSched); }
+function loadCards() { return readLS(LS_PATIENTS, x => typeof x.person === "string" && x.person.trim(), normCard); }
 function saveLocal() {
-  try { localStorage.setItem(LS_KEY, JSON.stringify(shifts)); localStorage.setItem(LS_SCHED, JSON.stringify(sched)); } catch (e) {}
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(shifts)); localStorage.setItem(LS_SCHED, JSON.stringify(sched));
+    localStorage.setItem(LS_PATIENTS, JSON.stringify(pcards));
+  } catch (e) {}
 }
 function getLS(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 function setLS(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} }
@@ -43,6 +55,14 @@ function remove(id) {
 }
 function putSched(e) {
   upsertLocal(sched, { ...normSched(e), updatedAt: bump(e.updatedAt), dirty: true, failed: false });
+}
+function putCard(c) {
+  upsertLocal(pcards, { ...normCard(c), updatedAt: bump(c.updatedAt), dirty: true, failed: false });
+}
+function removeCard(id) {
+  const c = pcards.find(x => x.id === id);
+  // Keep a marker so other devices learn about the delete, but drop the details.
+  if (c) putCard({ id: c.id, person: c.person, updatedAt: c.updatedAt, deleted: true });
 }
 function removeSched(id) {
   const e = sched.find(x => x.id === id);
@@ -70,11 +90,26 @@ const schedFromRow = r => ({
   startTime: hhmm(r.start_time), endTime: hhmm(r.end_time), note: r.note || "",
   updatedAt: Date.parse(r.updated_at), deleted: !!r.deleted, dirty: false, failed: false,
 });
+const cardToRow = c => ({
+  owner: me.id, id: c.id, person: c.person, birth_date: c.birthDate, address: c.address, email: c.email, phone: c.phone, notes: c.notes,
+  payer_same: c.payerSame, payer_name: c.payerName, payer_address: c.payerAddress, payer_email: c.payerEmail,
+  payer_phone: c.payerPhone, payer_relationship: c.payerRel, deleted: c.deleted, updated_at: iso(c.updatedAt),
+});
+const cardFromRow = r => ({
+  id: r.id, person: r.person || "", birthDate: r.birth_date || null, address: r.address || "", email: r.email || "", phone: r.phone || "",
+  notes: r.notes || "", payerSame: !!r.payer_same, payerName: r.payer_name || "", payerAddress: r.payer_address || "",
+  payerEmail: r.payer_email || "", payerPhone: r.payer_phone || "", payerRel: r.payer_relationship || "",
+  updatedAt: Date.parse(r.updated_at), deleted: !!r.deleted, dirty: false, failed: false,
+});
 const STORES = [
   { table: "shifts", get: () => shifts, set: v => { shifts = v; }, toRow, fromRow },
   { table: "schedule", get: () => sched, set: v => { sched = v; }, toRow: schedToRow, fromRow: schedFromRow },
+  { table: "patients", get: () => pcards, set: v => { pcards = v; }, toRow: cardToRow, fromRow: cardFromRow },
 ];
-const allLocal = () => [...shifts, ...sched];
+const allLocal = () => [...shifts, ...sched, ...pcards];
+// A database set up with an older setup.sql has no table for this yet (patient cards need version 6).
+const missingTable = e => !!e && (e.code === "PGRST205" || e.code === "42P01" || /schema cache|does not exist/i.test(e.message || ""));
+const noTable = new Set();   // tables this database doesn't have; their records stay on this device
 const isNetworkError = e => !e || !e.code || /fetch|network|load failed/i.test(e.message || "");
 
 async function fetchAll(build) {
@@ -96,11 +131,13 @@ async function push() {
     do {
       pushAgain = false;
       for (const st of STORES) {
+        if (noTable.has(st.table)) continue;
         const batch = st.get().filter(x => x.dirty && !x.failed);
         if (!batch.length) continue;
         setSync("syncing");
         const sent = new Map(batch.map(x => [x.id, x.updatedAt]));
         let { error } = await sb.from(st.table).upsert(batch.map(st.toRow), { onConflict: "owner,id" });
+        if (missingTable(error)) { noTable.add(st.table); continue; }
         if (error && isNetworkError(error)) throw error;
         if (error) {
           // One bad record shouldn't block the rest: try them one at a time.
@@ -117,7 +154,7 @@ async function push() {
         saveLocal();
       }
     } while (pushAgain);
-    const bad = allLocal().some(x => x.failed);
+    const bad = STORES.some(st => !noTable.has(st.table) && st.get().some(x => x.failed));
     setSync(bad ? "bad" : "ok", bad ? "Some changes couldn't be saved online. Edit them to try again." : "");
   } catch (e) {
     setSync("wait", "You're offline. Changes are saved on this device and will upload when you're back online.");
@@ -133,7 +170,10 @@ async function pull() {
   try {
     setSync("syncing");
     for (const st of STORES) {
-      const rows = await fetchAll(() => sb.from(st.table).select("*").eq("owner", me.id).order("id"));
+      let rows;
+      try { rows = await fetchAll(() => sb.from(st.table).select("*").eq("owner", me.id).order("id")); }
+      catch (e) { if (missingTable(e)) { noTable.add(st.table); continue; } throw e; }
+      noTable.delete(st.table);
       const byId = new Map(st.get().map(x => [x.id, x]));
       const seen = new Set();
       for (const r of rows) {
@@ -149,7 +189,7 @@ async function pull() {
     saveLocal(); renderAll();
     sync.last = Date.now();
     await push();
-    if (!allLocal().some(x => x.dirty)) setSync("ok");
+    if (!STORES.some(st => !noTable.has(st.table) && st.get().some(x => x.dirty))) setSync("ok");
   } catch (e) {
     setSync("wait", "Can't reach the online database right now. Your shifts are safe on this device.");
   }

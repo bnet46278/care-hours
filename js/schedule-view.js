@@ -108,7 +108,7 @@ function openPlanForm(kind, en) {
   const v = en || { person: draftPerson || "", days: [], onDate: today, untilDate: null, startTime: kind === "off" ? null : "09:00", endTime: kind === "off" ? null : "13:00", note: "" };
   const title = { weekly: "Repeating shift", once: "One-time shift", off: "Time off" }[kind];
   const allDay = kind === "off" && !v.startTime && !v.endTime;
-  const patient = `<div class="field"><label class="label" for="pPerson">Patient</label><input id="pPerson" list="people" autocomplete="off" placeholder="Patient's name" value="${esc(v.person)}"></div>`;
+  const patient = `<div class="field"><label class="label" for="pPerson">Patient</label>${patientSelect("pPerson", v.person)}</div>`;
   const times = `<div class="row2"><div class="field"><label class="label" for="pStart">Start</label><input type="time" id="pStart" value="${esc(v.startTime || "")}"></div>
     <div class="field"><label class="label" for="pEnd">End</label><input type="time" id="pEnd" value="${esc(v.endTime || "")}"></div></div>`;
   const note = `<div class="field"><label class="label" for="pNote">Notes</label><textarea id="pNote" placeholder="Anything to remember for these visits">${esc(v.note)}</textarea></div>`;
@@ -141,7 +141,7 @@ function savePlanForm(ev) {
   if (!/^\d{4}-\d\d-\d\d$/.test(en.onDate)) return err(f.kind === "off" ? "Enter the first day of your time off." : "Enter a date.");
   if (f.kind !== "off") {
     en.person = matchPatient(val("pPerson").replace(/\s+/g, " "));
-    if (!en.person) return err("Enter the patient's name.");
+    if (!en.person) return err("Choose a patient.");
     en.startTime = val("pStart"); en.endTime = val("pEnd");
     if (!en.startTime || !en.endTime) return err("Enter a start time and an end time.");
     if (en.startTime === en.endTime) return err("The end time must be different from the start time.");

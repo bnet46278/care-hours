@@ -28,7 +28,7 @@ test.describe("Sharing with payers", () => {
     const app = await openApp();
     await app.signIn("cynda@example.com");
     await app.share("", "payer@example.com");
-    await expect(app.$("#shareForm .err")).toHaveText("Enter the patient whose shifts you want to share.");
+    await expect(app.$("#shareForm .err")).toHaveText("Choose the patient whose shifts you want to share.");
     await app.share("Mom", "cynda@example.com");
     await expect(app.$("#shareForm .err")).toContainText("That's your own email");
     await app.share("Mom", "Payer@Example.com");

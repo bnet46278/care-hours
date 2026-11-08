@@ -113,33 +113,73 @@ class CareHours {
 
   // ---------- logging shifts ----------
   async clockIn(patient) {
-    if (patient !== undefined) await this.$("#personIn").fill(patient);
+    if (patient !== undefined) await this.$("#personIn").selectOption(await this.ensurePatient(patient));
     await this.$("#clockBtn").click();
   }
   async clockOut() { await this.$("#clockBtn").click(); }
   async addShift({ date, start, end, patient, note = "" }) {
+    const name = await this.ensurePatient(patient ?? "");
     await this.$("#addBtn").click();
     await this.$("#fDate").fill(date);
     await this.$("#fStart").fill(start);
     await this.$("#fEnd").fill(end);
-    await this.$("#fPerson").fill(patient ?? "");
+    await this.$("#fPerson").selectOption(name);
     await this.$("#fNote").fill(note);
     await this.$("#shiftForm button[type=submit]").click();
   }
 
   // ---------- sharing ----------
   async share(patient, email) {
-    await this.$("#sharePerson").fill(patient);
+    await this.$("#sharePerson").selectOption(await this.ensurePatient(patient));
     await this.$("#shareEmail").fill(email);
     await this.$("#shareForm button[type=submit]").click();
     // Wait for the app's answer, so the share is saved before the next step (or the error is showing).
     await expect(this.$("#shareForm .ok-msg, #shareForm .err").filter({ hasText: /\S/ })).toHaveCount(1);
   }
 
+  // ---------- patients ----------
+  // Patients are picked from the patient list. Adds the patient through the Patients card if they aren't
+  // on the list yet, and returns the name as the list spells it ("mom" picks an existing "Mom").
+  async ensurePatient(name) {
+    if (!name) return "";
+    const have = await this.page.evaluate(n => patientList().find(p => samePerson(p) === samePerson(n)) || null, name);
+    if (have) return have;
+    await this.addPatient({ name });
+    return name.replace(/\s+/g, " ").trim();
+  }
+  // Open the Patients card (if it's collapsed), then one patient's card (if it's closed).
+  async openPatients() {
+    if (await this.$("#patientsBody").isHidden()) await this.$("#patientsToggle").click();
+    await expect(this.$("#patientsBody")).toBeVisible();
+  }
+  async openCard(name) {
+    await this.openPatients();
+    const b = this.$(".pcard").filter({ hasText: name }).locator(".prow");
+    if ((await b.getAttribute("aria-expanded")) !== "true") await b.click();
+    await expect(this.$("#pcDetails")).toBeVisible();
+  }
+  async addPatient({ name, dob, address, email, phone, notes, same, payer = {} }) {
+    await this.$("#addPatient").click();
+    await this.$("#pcName").fill(name);
+    if (dob) await this.$("#pcDob").fill(dob);
+    if (address) await this.$("#pcAddress").fill(address);
+    if (email) await this.$("#pcEmail").fill(email);
+    if (phone) await this.$("#pcPhone").fill(phone);
+    if (same) await this.$("#pcSame").check();
+    if (payer.name) await this.$("#pcPayerName").fill(payer.name);
+    if (payer.rel) await this.$("#pcPayerRel").fill(payer.rel);
+    if (payer.address) await this.$("#pcPayerAddress").fill(payer.address);
+    if (payer.email) await this.$("#pcPayerEmail").fill(payer.email);
+    if (payer.phone) await this.$("#pcPayerPhone").fill(payer.phone);
+    if (notes) await this.$("#pcNotes").fill(notes);
+    await this.$("#pcSave").click();
+  }
+
   // ---------- schedule ----------
   async addToSchedule(kind, f) {
+    const name = f.patient !== undefined ? await this.ensurePatient(f.patient) : undefined;
     await this.$(`[data-new=${kind}]`).click();
-    if (f.patient !== undefined) await this.$("#pPerson").fill(f.patient);
+    if (name !== undefined) await this.$("#pPerson").selectOption(name);
     for (const d of f.days || []) await this.$(`#pDay${d}`).check();
     if (f.from) await this.$("#pFrom").fill(f.from);
     if (f.until) await this.$("#pUntil").fill(f.until);

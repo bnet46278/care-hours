@@ -95,10 +95,21 @@ test.describe("Hours box", () => {
     await expect(row("Dad")).toContainText("Worked3h 00m [3.00]");
     await expect(row("Dad")).toContainText("Scheduled2h 00m [2.00]");
 
-    // It follows the Show picker.
+    // It shows the chart's dates, and a total that matches the chart.
+    await expect(app.$("#bycgDates")).toHaveText("This week · Nov 2 – Nov 8");
+    await expect(app.weekTotal()).toHaveText("8h 00m");
+    await expect(app.$(".bycg-total")).toContainText("Worked8h 00m [8.00]");
+    await expect(app.$(".bycg-total")).toContainText("Scheduled10h 00m [10.00]");
+    await app.$("#prevWeek").click();
+    await expect(app.$("#bycgDates")).toHaveText("Last week · Oct 26 – Nov 1");
+    await expect(app.$("#byCaregiver")).toContainText("No hours last week.");
+    await app.$("#thisWeek").click();
+
+    // It follows the Show picker. With one patient there's no separate total.
     await app.$("#myPatient").selectOption({ label: "Dad" });
     await expect(app.$(".bycg-item")).toHaveCount(1);
     await expect(row("Dad")).toBeVisible();
+    await expect(app.$(".bycg-total")).toHaveCount(0);
   });
 
   test("payers see worked and scheduled hours for each caregiver", async ({ openApp }) => {
@@ -109,6 +120,9 @@ test.describe("Hours box", () => {
     await expect(row("Cynda B.")).toContainText("Scheduled4h 00m [4.00]");   // Mon; Wed falls on her time off
     await expect(row("Ann L.")).toContainText("Worked2h 00m [2.00]");
     await expect(row("Ann L.")).toContainText("Scheduled0m [0.00]");
+    await expect(payer.$("#bycgDates")).toHaveText("This week · Nov 2 – Nov 8");
+    await expect(payer.$(".bycg-total")).toContainText("Worked10h 30m [10.50]");   // same as the chart
+    await expect(payer.$(".bycg-total")).toContainText("Scheduled4h 00m [4.00]");
   });
 });
 

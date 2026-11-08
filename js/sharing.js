@@ -53,7 +53,7 @@ async function loadSharedWithMe() {
 async function loadSharedShifts() {
   sharedErr = "";
   const ids = [...new Set(sharedPairs.map(r => r.owner))];
-  if (!sb || !ids.length) { sharedAll = []; return; }
+  if (!sb || !ids.length) { sharedAll = []; sharedCards = []; return; }
   try {
     const rows = await fetchAll(() => sb.from("shifts").select("*").in("owner", ids).eq("deleted", false).order("id"));
     // The database only returns shared patients; this double-checks each shift against its share.
@@ -63,6 +63,7 @@ async function loadSharedShifts() {
     const srows = await fetchAll(() => sb.from("schedule").select("*").in("owner", ids).eq("deleted", false).order("id"));
     sharedSched = srows.map(r => ({ ...schedFromRow(r), owner: r.owner }))
       .filter(x => x.kind === "off" ? ids.includes(x.owner) : allowed.has(x.owner + "|" + samePerson(x.person)));
+    await loadSharedCards(ids, allowed);
     sharedLoadedAt = Date.now();
   } catch (e) {
     sharedErr = "Couldn't load the latest hours. Check your connection and tap Refresh.";
@@ -117,7 +118,7 @@ async function refreshShared() { await loadSharedShifts(); renderAll(); }
 
 // ================= render: sync & sharing card =================
 function syncLine() {
-  const pending = allLocal().filter(s => s.dirty && !s.failed).length;
+  const pending = STORES.filter(st => !noTable.has(st.table)).reduce((n, st) => n + st.get().filter(s => s.dirty && !s.failed).length, 0);
   if (sync.state === "syncing") return { cls: "wait", text: "Syncing…" };
   if (sync.state === "bad") return { cls: "bad", text: sync.msg };
   if (sync.state === "wait") return { cls: "wait", text: sync.msg + (pending ? ` (${pending} waiting)` : "") };
@@ -238,7 +239,7 @@ function renderSync() {
       <form id="shareForm" class="field" novalidate>
         <span class="label">Share a patient</span>
         <div class="field"><label class="label" for="sharePerson">Patient</label>
-          <input id="sharePerson" list="people" autocomplete="off" placeholder="Patient's name" value="${esc(shareUi.person || "")}"></div>
+          ${patientSelect("sharePerson", shareUi.person || "")}</div>
         <div class="field"><label class="label" for="shareEmail">Payer's email</label>
           <div class="inline"><input id="shareEmail" type="email" inputmode="email" placeholder="payer@example.com" value="${esc(shareUi.email || "")}">
           <button class="btn" type="submit" ${shareUi.busy ? "disabled" : ""}>Share</button></div></div>
@@ -260,7 +261,7 @@ function renderSync() {
     $("nameForm").addEventListener("submit", saveName);
     $("shareForm").addEventListener("submit", addShare);
     wireHold();
-    $("sharePerson").addEventListener("input", e => { shareUi.person = e.target.value; });
+    $("sharePerson").addEventListener("change", e => { shareUi.person = e.target.value; });
     $("shareEmail").addEventListener("input", e => { shareUi.email = e.target.value; });
     el.querySelectorAll("[data-unshare]").forEach(b => b.addEventListener("click", () => { shareUi.confirm = b.dataset.unshare; renderSync(); }));
     el.querySelectorAll("[data-unshare-no]").forEach(b => b.addEventListener("click", () => { shareUi.confirm = null; renderSync(); }));
@@ -406,7 +407,7 @@ async function signOut() {
   signoutConfirm = false;
   await sb.auth.signOut().catch(() => {});
   // The shifts stay safe in the online account; remove them from this device.
-  shifts = []; sched = [];
+  shifts = []; sched = []; pcards = [];
   setLS(LS_OWNER, null); saveLocal();
   onSignedOut();
   renderSync();
@@ -441,10 +442,10 @@ function sharedGroups() {
 }
 async function addShare(ev) {
   ev.preventDefault();
-  const person = matchPatient(($("sharePerson").value || "").replace(/\s+/g, " ").trim());
+  const person = ($("sharePerson").value || "").trim();
   const email = ($("shareEmail").value || "").trim().toLowerCase();
   shareUi.err = ""; shareUi.ok = "";
-  if (!person) { shareUi.err = "Enter the patient whose shifts you want to share."; renderSync(); $("sharePerson").focus(); return; }
+  if (!person) { shareUi.err = "Choose the patient whose shifts you want to share."; renderSync(); $("sharePerson").focus(); return; }
   if (!emailOk(email)) { shareUi.err = "Enter the payer's full email address, like name@example.com."; renderSync(); $("shareEmail").focus(); return; }
   if (email === (me.email || "").toLowerCase()) { shareUi.err = "That's your own email. Enter the email of the person who pays you."; renderSync(); return; }
   const dup = shares.find(x => x.email === email && samePerson(x.person) === samePerson(person));
@@ -457,7 +458,7 @@ async function addShare(ev) {
   // Warn when nothing is recorded for this patient yet (shares alone don't count).
   const known = [...mine(), ...liveSched().filter(e => e.kind !== "off")].some(x => samePerson(x.person) === samePerson(person));
   shareUi.ok = known ? `${email} can now see ${person}'s shifts.`
-    : `Shared. You don't have any shifts for "${person}" yet, so they'll see shifts once you clock in with that exact patient name.`;
+    : `Shared. You don't have any shifts for "${person}" yet; ${email} will see them as you log them.`;
   shareUi.email = ""; shareUi.person = "";
   renderSync();
   loadContacts().then(renderAll);

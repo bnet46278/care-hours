@@ -10,6 +10,11 @@
 --     never change them. Shifts with no patient name are never shared.
 --   * Everyone else sees nothing.
 --
+-- Version 6 adds patient cards: name, date of birth, address, email, phone, notes, and who pays.
+--   * The caregiver who creates a card owns it. Payers they share that patient with can read and edit it,
+--     but only the caregiver can add a card, rename it or remove it.
+-- If you ran version 5, run this whole file again. Nothing you already have is changed.
+--
 -- Version 5 lets a caregiver hold each week until they share it.
 --   * With "Hold each week" on, payers see a caregiver's worked shifts only up to the "shared through" date.
 --   * Sharing a week moves that date forward. The database never lets it move back, so a shared week
@@ -132,6 +137,27 @@ create table if not exists public.messages (
 create index if not exists messages_recipient_idx on public.messages (recipient, created_at);
 create index if not exists messages_sender_idx on public.messages (sender, created_at);
 
+-- Patient cards. One per patient for each caregiver; "person" is the name used on shifts.
+create table if not exists public.patients (
+  owner               uuid        not null default auth.uid() references auth.users (id) on delete cascade,
+  id                  text        not null,
+  person              text        not null check (char_length(btrim(person)) between 1 and 100),
+  birth_date          date,
+  address             text        not null default '' check (char_length(address) <= 500),
+  email               text        not null default '' check (char_length(email) <= 200),
+  phone               text        not null default '' check (char_length(phone) <= 30),
+  notes               text        not null default '' check (char_length(notes) <= 5000),
+  payer_same          boolean     not null default false,
+  payer_name          text        not null default '' check (char_length(payer_name) <= 100),
+  payer_address       text        not null default '' check (char_length(payer_address) <= 500),
+  payer_email         text        not null default '' check (char_length(payer_email) <= 200),
+  payer_phone         text        not null default '' check (char_length(payer_phone) <= 30),
+  payer_relationship  text        not null default '' check (char_length(payer_relationship) <= 100),
+  deleted             boolean     not null default false,
+  updated_at          timestamptz not null default now(),
+  primary key (owner, id)
+);
+
 -- ---------- Helper ----------
 
 -- The signed-in person's email, lowercased. Supabase only issues a session after the
@@ -208,6 +234,23 @@ as $$
   )
 $$;
 
+-- Payers can edit a patient card, but only the caregiver who owns it can rename or remove it.
+create or replace function public.guard_patient_edit() returns trigger
+language plpgsql set search_path = public
+as $$
+begin
+  if auth.uid() is not null and auth.uid() <> old.owner and (
+       new.owner <> old.owner or new.id <> old.id or new.deleted <> old.deleted
+       or public.same_person(new.person) <> public.same_person(old.person)) then
+    raise exception 'Only the caregiver can rename or remove a patient' using errcode = '42501';
+  end if;
+  return new;
+end
+$$;
+drop trigger if exists guard_patient_edit on public.patients;
+create trigger guard_patient_edit before update on public.patients
+  for each row execute function public.guard_patient_edit();
+
 -- ---------- Access rules (row level security) ----------
 
 alter table public.schedule enable row level security;
@@ -270,6 +313,25 @@ create policy "shared viewers read schedule" on public.schedule
     or (kind = 'off' and public.is_shared_with_me(owner))
   );
 
+-- Patient cards: the caregiver manages their own.
+alter table public.patients enable row level security;
+drop policy if exists "owner manages own patients" on public.patients;
+create policy "owner manages own patients" on public.patients
+  for all to authenticated
+  using (owner = auth.uid())
+  with check (owner = auth.uid());
+
+-- Patient cards: payers read and edit the cards of patients shared with them (not add or remove).
+drop policy if exists "shared viewers read patients" on public.patients;
+create policy "shared viewers read patients" on public.patients
+  for select to authenticated
+  using (public.can_view_shift(owner, person));
+drop policy if exists "shared viewers edit patients" on public.patients;
+create policy "shared viewers edit patients" on public.patients
+  for update to authenticated
+  using (public.can_view_shift(owner, person))
+  with check (public.can_view_shift(owner, person));
+
 -- Messages: only the sender and the recipient can read them.
 alter table public.messages enable row level security;
 drop policy if exists "people read their own messages" on public.messages;
@@ -300,8 +362,8 @@ begin
 end $$;
 
 -- Nobody who is signed out can touch any of this.
-revoke all on public.shifts, public.shares, public.profiles, public.schedule from anon;
-grant select, insert, update, delete on public.shifts, public.shares, public.profiles, public.schedule to authenticated;
+revoke all on public.shifts, public.shares, public.profiles, public.schedule, public.patients from anon;
+grant select, insert, update, delete on public.shifts, public.shares, public.profiles, public.schedule, public.patients to authenticated;
 grant execute on function public.my_email(), public.same_person(text), public.is_shared_with_me(uuid), public.can_view_shift(uuid, text) to authenticated;
 revoke execute on function public.is_shared_with_me(uuid), public.can_view_shift(uuid, text) from anon, public;
 -- Messages can be read, sent (only who it's to and what it says) and marked read; never edited or deleted.

@@ -5,11 +5,11 @@ test.describe("Shifts on this device only", () => {
   test("a patient is required to clock in or add a shift", async ({ openApp }) => {
     const app = await openApp({ sync: false });
     await app.clockIn("");
-    await expect(app.$("#clockErr")).toHaveText("Enter the patient's name to clock in.");
+    await expect(app.$("#clockErr")).toHaveText("Choose a patient to clock in.");
     await expect(app.$("#clock .status")).toHaveText("Off the clock");
 
     await app.addShift({ date: "2026-11-02", start: "09:00", end: "10:00", patient: "" });
-    await expect(app.$("#fErr")).toHaveText("Enter the patient's name.");
+    await expect(app.$("#fErr")).toHaveText("Choose a patient.");
   });
 
   test("clocking in and out records a shift for the patient", async ({ openApp }) => {
@@ -25,12 +25,13 @@ test.describe("Shifts on this device only", () => {
 
   test("an overnight missed shift counts on the day it started", async ({ openApp }) => {
     const app = await openApp({ sync: false });
+    await app.ensurePatient("Mom");
     await app.$("#addBtn").click();
     await app.$("#fDate").fill("2026-11-03");
     await app.$("#fStart").fill("22:00");
     await app.$("#fEnd").fill("06:30");
     await expect(app.$("#fHint")).toHaveText("Ends the next day · 8h 30m");
-    await app.$("#fPerson").fill("Mom");
+    await app.$("#fPerson").selectOption("Mom");
     await app.$("#shiftForm button[type=submit]").click();
 
     await expect(app.weekTotal()).toHaveText("8h 30m");

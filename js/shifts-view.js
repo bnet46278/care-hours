@@ -34,10 +34,10 @@ function renderClock() {
       ${todays.length ? `<div class="todayplan"><span class="label">Scheduled today</span>${todays.map(o =>
         `<button class="ghost" data-clockfor="${esc(o.person)}">Clock in for <b>${esc(o.person)}</b> · ${tFmt.format(new Date(o.start))} – ${tFmt.format(new Date(o.end))}</button>`).join("")}</div>` : ""}
       <div class="field"><label class="label" for="personIn">Patient</label>
-        <input id="personIn" list="people" autocomplete="off" placeholder="Patient's name" value="${esc(draftPerson)}">
+        ${patientSelect("personIn", draftPerson)}
         <div class="err" id="clockErr" role="alert"></div></div>
       <button class="big" id="clockBtn">Clock in</button>`;
-    $("personIn").addEventListener("input", e => { draftPerson = e.target.value; $("clockErr").textContent = ""; });
+    $("personIn").addEventListener("change", e => { draftPerson = e.target.value; $("clockErr").textContent = ""; });
     el.querySelectorAll("[data-clockfor]").forEach(b => b.addEventListener("click", () => { draftPerson = b.dataset.clockfor; onClock(); }));
   }
   $("clockBtn").addEventListener("click", onClock);
@@ -49,7 +49,7 @@ function onClock() {
     put({ ...a, end: Math.max(Date.now(), a.start), note: draftNote });
   } else {
     const person = draftPerson.replace(/\s+/g, " ").trim();
-    if (!person) { $("clockErr").textContent = "Enter the patient's name to clock in."; $("personIn").focus(); return; }
+    if (!person) { $("clockErr").textContent = "Choose a patient to clock in."; $("personIn").focus(); return; }
     weekOffset = 0;
     put({ id: newId(), start: Date.now(), end: null, person: matchPatient(person), note: "" });
   }
@@ -176,11 +176,20 @@ function renderWeek() {
   for (const o of occ) if (o.kind !== "off" && !o.cancelled) row(o).sched += o.end - o.start;
   const list = [...rows.values()].sort((a, b) => a.name.localeCompare(b.name));
   bc.hidden = !list.length && !ro2;
-  bc.innerHTML = `<span class="label">Hours by ${ro2 ? "caregiver" : "patient"}</span>` + (list.length
+  // Same dates as the chart, so it's clear which period the hours are for.
+  const dates = `${shortFmt.format(R.start)} – ${shortFmt.format(addDays(R.end, -1))}`;
+  const title = periodTitle(R);
+  const sumOf = k => list.reduce((t, r) => t + r[k], 0);
+  bc.innerHTML = `<div class="bycg-head"><span class="label">Hours by ${ro2 ? "caregiver" : "patient"}</span>
+      <span class="bycg-dates" id="bycgDates">${esc(title === dates ? title : `${title} · ${dates}`)}</span></div>` + (list.length
     ? list.map(r => `<div class="bycg-item${r.cls}">
         <div class="bycg-name"><span class="dot"></span>${esc(r.name)}</div>
         <div class="bycg-row"><span>Worked</span><span class="num">${hrs(r.worked)}</span></div>
         <div class="bycg-row"><span>Scheduled</span><span class="num">${hrs(r.sched)}</span></div></div>`).join("")
+      + (list.length > 1 ? `<div class="bycg-total">
+        <div class="bycg-name">Total</div>
+        <div class="bycg-row"><span>Worked</span><span class="num">${hrs(sumOf("worked"))}</span></div>
+        <div class="bycg-row"><span>Scheduled</span><span class="num">${hrs(sumOf("sched"))}</span></div></div>` : "")
     : `<p class="hint">No hours ${periodWords()}.</p>`);
 }
 
@@ -315,7 +324,7 @@ function openForm(s) {
         <div class="field"><label class="label" for="fEnd">End</label><input type="time" id="fEnd" value="${timeVal(en)}" required></div>
       </div>
       <div class="hint" id="fHint"></div>
-      <div class="field"><label class="label" for="fPerson">Patient</label><input id="fPerson" list="people" autocomplete="off" value="${esc(s ? s.person : draftPerson)}" placeholder="Patient's name"></div>
+      <div class="field"><label class="label" for="fPerson">Patient</label>${patientSelect("fPerson", s ? s.person : draftPerson)}</div>
       <div class="field"><label class="label" for="fNote">Notes</label><textarea id="fNote">${esc(s ? s.note : "")}</textarea></div>
       <div class="err" id="fErr" role="alert"></div>
       <div class="formacts"><button class="btn" type="submit">${s ? "Save changes" : "Add shift"}</button>
@@ -336,7 +345,7 @@ function openForm(s) {
     if (r.end - r.start > 24 * HOUR) { $("fErr").textContent = "A shift can't be longer than 24 hours."; return; }
     if (r.end > Date.now() + 60000) { $("fErr").textContent = "That shift ends in the future. Use Clock in for a shift that's happening now."; return; }
     const person = $("fPerson").value.replace(/\s+/g, " ").trim();
-    if (!person) { $("fErr").textContent = "Enter the patient's name."; $("fPerson").focus(); return; }
+    if (!person) { $("fErr").textContent = "Choose a patient."; $("fPerson").focus(); return; }
     const prev = formOpen.prev;
     put({ id: formOpen.id || newId(), start: r.start, end: r.end, person: matchPatient(person), note: $("fNote").value.trim(), updatedAt: prev ? prev.updatedAt : 0 });
     weekOffset = offsetFor(new Date(r.start));
