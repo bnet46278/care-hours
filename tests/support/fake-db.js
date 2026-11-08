@@ -5,6 +5,8 @@
 //   * a payer sees a caregiver's time off (never a note), and the caregiver's display name
 //   * people message each other only when one shares a patient with the other; only the two of them
 //     can read a message, and only the recipient can mark it read (nothing else can change)
+//   * a caregiver who holds weeks shows payers only the shifts that start before their shared_through,
+//     and shared_through can never move back (version 5)
 //   * signed-out visitors get nothing
 const { randomUUID } = require("crypto");
 
@@ -18,8 +20,8 @@ const UPDATE_COLS = { messages: ["read_at"] };
 
 class FakeDb {
   // now: the time the database clock starts at (each new row is a second later than the last).
-  // version: 3 acts like a database set up with version 3 of setup.sql (no messages, no phone numbers).
-  constructor({ now = Date.now(), version = 4 } = {}) {
+  // version: acts like a database set up with that version of setup.sql (4: no week holding; 3: also no messages or phone numbers).
+  constructor({ now = Date.now(), version = 5 } = {}) {
     this.version = version;
     this.users = new Map();   // email -> id
     this.tables = { shifts: [], schedule: [], shares: [], profiles: [], messages: [] };
@@ -48,6 +50,12 @@ class FakeDb {
     for (const r of rows) add(...r);
     return [...out.values()];
   }
+  // shift_released() from setup.sql
+  released(owner, startAt) {
+    const p = this.tables.profiles.find(r => r.id === owner);
+    if (!p || !p.hold_weeks) return true;
+    return !!p.shared_through && Date.parse(startAt) < Date.parse(p.shared_through);
+  }
   canMessage(other, me) { return !!other && other !== me.id && this.contacts(me).some(c => c.id === other); }
 
   // ---------- access rules ----------
@@ -60,7 +68,7 @@ class FakeDb {
   }
   canRead(table, r, me) {
     if (!me.id) return false;
-    if (table === "shifts") return r.owner === me.id || this.canViewPatient(r.owner, r.person, me);
+    if (table === "shifts") return r.owner === me.id || (this.canViewPatient(r.owner, r.person, me) && this.released(r.owner, r.start_at));
     if (table === "schedule") return r.owner === me.id ||
       (r.kind === "off" ? this.sharedWithMe(r.owner, me) : this.canViewPatient(r.owner, r.person, me));
     if (table === "shares") return r.owner === me.id || r.viewer_email === me.email;
@@ -128,6 +136,12 @@ class FakeDb {
         const bad = this.check(q.table, row);
         if (bad) return { data: null, error: { code: "23514", message: bad } };
         const i = table.findIndex(r => key(r) === key(row));
+        // The keep_shared_through trigger: a shared week can't be unshared.
+        if (q.table === "profiles" && i >= 0 && "shared_through" in row && table[i].shared_through &&
+            (!row.shared_through || Date.parse(row.shared_through) < Date.parse(table[i].shared_through)))
+          return { data: null, error: { code: "23514", message: "A shared week can't be unshared" } };
+        if (this.version < 5 && q.table === "profiles" && ("hold_weeks" in row || "shared_through" in row))
+          return { data: null, error: { code: "PGRST204", message: "Could not find the 'hold_weeks' column of 'profiles' in the schema cache" } };
         if (i >= 0 && q.op === "insert") return { data: null, error: { code: "23505", message: "duplicate key" } };
         if (i >= 0) table[i] = { ...table[i], ...row }; else table.push({ created_at: this.stamp(), ...row });
       }

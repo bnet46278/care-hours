@@ -283,3 +283,7 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
 .bubble .meta { font-size: 0.72rem; opacity: 0.8; margin-top: 2px; text-align: right; }
 .compose textarea { resize: vertical; min-height: 72px; }
 .sendbtns { display: inline-flex; gap: 8px; align-items: center; margin-left: auto; }
+
+/* Holding weeks */
+.holdbtns { display: flex; flex-wrap: wrap; gap: 8px; }
+.held { margin: 6px 0 0; padding: 6px 10px; border-radius: 8px; background: var(--bg); border: 1px dashed var(--line); }

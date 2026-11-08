@@ -24,8 +24,12 @@ async function loadSharedWithMe() {
   const ids = [...new Set(rows.map(r => r.owner))];
   caregiverNames = {};
   if (ids.length) {
-    const pr = await sb.from("profiles").select("id, display_name, email").in("id", ids);
-    if (!pr.error) for (const p of pr.data) caregiverNames[p.id] = { name: p.display_name || p.email || "A caregiver", email: p.email || "" };
+    const pr = await sb.from("profiles").select("*").in("id", ids);
+    if (!pr.error) for (const p of pr.data) caregiverNames[p.id] = {
+      name: p.display_name || p.email || "A caregiver", email: p.email || "",
+      // Holding weeks: payers see this caregiver's shifts only before this time.
+      sharedThrough: p.hold_weeks ? (p.shared_through ? new Date(p.shared_through) : new Date(0)) : null,
+    };
   }
   // The same patient is often shared by several caregivers: combine them by name.
   const byPatient = new Map();
@@ -83,6 +87,7 @@ async function onSignedIn(session) {
 }
 function onSignedOut() {
   stopMessaging();
+  holdUi = { confirm: null, busy: false, err: "" };
   me = null; nameSavedNow = null; shares = []; profile = { display_name: "" }; sharedPairs = []; sharedPatients = []; sharedAll = []; sharedSched = []; sharedCaregiver = "all"; caregiverNames = {}; view = "mine";
   setSync("off"); renderAll();
 }
@@ -229,6 +234,7 @@ function renderSync() {
         }).join("")}</ul></div>`).join("")
           : `<p class="hint">Nobody yet. Share a patient with the person who pays for their care.</p>`}
       </div>
+      ${holdSection()}
       <form id="shareForm" class="field" novalidate>
         <span class="label">Share a patient</span>
         <div class="field"><label class="label" for="sharePerson">Patient</label>
@@ -253,6 +259,7 @@ function renderSync() {
     }
     $("nameForm").addEventListener("submit", saveName);
     $("shareForm").addEventListener("submit", addShare);
+    wireHold();
     $("sharePerson").addEventListener("input", e => { shareUi.person = e.target.value; });
     $("shareEmail").addEventListener("input", e => { shareUi.email = e.target.value; });
     el.querySelectorAll("[data-unshare]").forEach(b => b.addEventListener("click", () => { shareUi.confirm = b.dataset.unshare; renderSync(); }));
@@ -263,6 +270,107 @@ function renderSync() {
   if (typedPhone !== null && $("dispPhone")) $("dispPhone").value = typedPhone;
   if (focusId && $(focusId)) $(focusId).focus();
   renderFoot();
+}
+
+// ---------- holding each week until it's shared ----------
+// With "Hold each week" on, payers see your shifts only up to profile.shared_through (a Monday at midnight).
+// Sharing moves it forward; the database never lets it move back.
+let holdUi = { confirm: null, busy: false, err: "" };   // confirm: "off" or the ISO time to share through
+const holding = () => !!(profile && profile.hold_weeks);
+const sharedThrough = () => (profile && profile.shared_through ? new Date(profile.shared_through) : null);
+const lastDayBefore = d => dayFmt.format(addDays(d, -1));          // "Sunday, Nov 8"
+const weekWords = (from, to) => `${shortFmt.format(from)} – ${shortFmt.format(addDays(to, -1))}`;
+
+function holdSection() {
+  const on = holding(), thru = sharedThrough();
+  const ws = weekStart(new Date()), we = addDays(ws, 7), lastWs = addDays(ws, -7);
+  let body = "";
+  if (on) {
+    const status = thru && thru > new Date(0) ? `Payers can see your shifts through <b>${esc(lastDayBefore(thru))}</b>.` : "Payers can't see any of your shifts yet.";
+    const btn = (to, label) => `<button type="button" class="btn" data-share-through="${to.toISOString()}"${holdUi.busy ? " disabled" : ""}>${esc(label)}</button>`;
+    let buttons = "";
+    if (!thru || thru < we) {
+      const from = thru && thru > new Date(0) ? thru : null;
+      if (thru && thru < ws) buttons += btn(ws, `Share through last week (${from && from < lastWs ? weekWords(from, ws) : weekWords(lastWs, ws)})`);
+      buttons += btn(we, thru && thru < ws ? `Share through this week (${weekWords(from || lastWs, we)})` : `Share this week (${weekWords(ws, we)})`);
+    }
+    body = `<p class="hint" id="holdStatus">${status}${thru && thru >= we ? ` This week is shared. Next week (${esc(weekWords(we, addDays(we, 7)))}) is held until you share it.` : ""}</p>
+      ${holdUi.confirm && holdUi.confirm !== "off" ? `<div class="confirm" id="holdConfirm"><span>Payers will see your shifts through ${esc(lastDayBefore(new Date(holdUi.confirm)))}. You can't take this back.</span>
+        <button class="link" id="holdYes">Share</button><button class="link" id="holdNo">Cancel</button></div>`
+        : buttons ? `<div class="holdbtns">${buttons}</div>` : ""}`;
+  }
+  const offConfirm = holdUi.confirm === "off" ? `<div class="confirm" id="holdConfirm"><span>Turning this off shares all your shifts now, including this week. You can't take that back.</span>
+    <button class="link danger" id="holdYes">Turn off and share</button><button class="link" id="holdNo">Keep holding</button></div>` : "";
+  return `<div class="field holdbox" id="holdBox">
+      <span class="label">Weekly sharing</span>
+      <label class="checkline"><input type="checkbox" id="holdWeeks"${on ? " checked" : ""}${holdUi.busy ? " disabled" : ""}> Hold each week until I share it</label>
+      ${on ? "" : `<p class="hint">Off: payers see your shifts as soon as you save them. Turn this on to keep the current week private until you're ready.</p>`}
+      ${offConfirm}${body}
+      <div class="err" role="alert">${esc(holdUi.err)}</div>
+    </div>`;
+}
+function wireHold() {
+  const box = $("holdBox");
+  if (!box) return;
+  $("holdWeeks").addEventListener("change", e => {
+    holdUi.err = "";
+    if (e.target.checked) { setHold(true); return; }
+    e.target.checked = true;            // stays on until they confirm
+    holdUi.confirm = "off"; renderSync();
+  });
+  box.querySelectorAll("[data-share-through]").forEach(b => b.addEventListener("click", () => {
+    holdUi.err = ""; holdUi.confirm = b.dataset.shareThrough; renderSync();
+  }));
+  if ($("holdNo")) $("holdNo").addEventListener("click", () => { holdUi.confirm = null; renderSync(); });
+  if ($("holdYes")) $("holdYes").addEventListener("click", () => {
+    const c = holdUi.confirm; holdUi.confirm = null;
+    if (c === "off") setHold(false); else shareThrough(new Date(c));
+  });
+}
+// The new shared-through time is never earlier than the old one.
+const later = (a, b) => (!a ? b : !b ? a : a > b ? a : b);
+async function saveHold(fields) {
+  holdUi.busy = true; holdUi.err = ""; renderSync();
+  const { error } = await sb.from("profiles").upsert({ id: me.id, email: me.email, ...fields });
+  holdUi.busy = false;
+  if (error) {
+    holdUi.err = /hold_weeks|shared_through/i.test(error.message || "")
+      ? "Holding weeks needs the latest setup.sql. Run it in Supabase, then try again."
+      : /unshared/i.test(error.message || "") ? "That week is already shared."
+      : "That didn't save. Check your connection and try again.";
+  } else Object.assign(profile, fields);
+  renderAll();
+}
+function setHold(on) {
+  const ws = weekStart(new Date()), we = addDays(ws, 7), old = sharedThrough();
+  // First time on: hold this week. Back on after being off: this week was already visible, so hold from next week.
+  if (on) return saveHold({ hold_weeks: true, shared_through: later(old, old ? we : ws).toISOString() });
+  return saveHold({ hold_weeks: false, shared_through: later(old, we).toISOString() });
+}
+function shareThrough(to) { return saveHold({ shared_through: later(sharedThrough(), to).toISOString() }); }
+
+// A line on the week card about what payers can't see yet.
+function renderHeldNote() {
+  const el = $("heldNote");
+  if (!el) return;
+  let text = "";
+  const R = viewRange();
+  if (view === "mine" && me && holding() && shares.length) {
+    const thru = sharedThrough() || new Date(0);
+    if (R.end > thru) text = R.start >= thru
+      ? "Not shared yet. Payers can't see these shifts until you share them in Sync & sharing."
+      : `Payers can see your shifts through ${lastDayBefore(thru)}. Share the rest in Sync & sharing when you're ready.`;
+  } else if (view === "all") {
+    const ids = [...new Set(sharedPairs.map(r => r.owner))].filter(id => sharedCaregiver === "all" || id === sharedCaregiver);
+    text = ids.filter(id => caregiverNames[id] && caregiverNames[id].sharedThrough && R.end > caregiverNames[id].sharedThrough)
+      .map(id => {
+        const t = caregiverNames[id].sharedThrough;
+        return t > new Date(0) ? `${cgName(id)} has shared shifts through ${lastDayBefore(t)}. Later shifts appear when they share them.`
+          : `${cgName(id)} hasn't shared any shifts yet.`;
+      }).join(" ");
+  }
+  el.textContent = text;
+  el.hidden = !text;
 }
 
 const emailOk = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);

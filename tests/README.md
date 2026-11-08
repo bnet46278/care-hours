@@ -40,6 +40,7 @@ To run one file or one test: `npx playwright test specs/schedule.spec.js`, or `n
 | `specs/colors-and-details.spec.js` | Patient and caregiver colors, the hours box (Worked and Scheduled lines), tapping a day for its details |
 | `specs/layout.spec.js` | Shifts and Schedule cards collapsed by default, Week / 2 weeks / Month, page order, the update notice |
 | `specs/messages.spec.js` | Messages both ways, live updates and unread counts, unsent messages, who can message whom, the database keeping messages private, the Text button |
+| `specs/hold-weeks.spec.js` | Holding each week: payers can't see it until it's shared, sharing can't be undone (also in the database), catching up on older weeks, turning it off and on, an older database |
 | `specs/offline.spec.js` | The app opens and works with no connection |
 | `unit/schedule-math.spec.js` | The schedule math on its own, including the night the clocks fall back |
 

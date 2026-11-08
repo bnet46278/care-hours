@@ -77,7 +77,7 @@ function renderAll() {
     const typing = document.activeElement && $("clock").contains(document.activeElement) && document.activeElement.tagName !== "BUTTON";
     if (!typing || !!active() !== $("clock").classList.contains("on")) renderClock();
   }
-  renderWeek(); renderList(); renderPlan(); renderPlanShared(); renderMessages();
+  renderWeek(); renderHeldNote(); renderList(); renderPlan(); renderPlanShared(); renderMessages();
   const typingSync = document.activeElement && $("sync").contains(document.activeElement) && document.activeElement.tagName === "INPUT";
   if (!typingSync) renderSync(); else renderSyncState();
 }

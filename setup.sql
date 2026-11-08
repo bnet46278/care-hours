@@ -10,6 +10,12 @@
 --     never change them. Shifts with no patient name are never shared.
 --   * Everyone else sees nothing.
 --
+-- Version 5 lets a caregiver hold each week until they share it.
+--   * With "Hold each week" on, payers see a caregiver's worked shifts only up to the "shared through" date.
+--   * Sharing a week moves that date forward. The database never lets it move back, so a shared week
+--     can't be unshared. The schedule isn't held; payers always see it.
+-- If you ran version 4, run this whole file again. Nothing you already have is changed.
+--
 -- Version 4 adds messages between caregivers and payers, and a phone number for the Text button.
 --   * Two people can message each other only when one of them shares a patient with the other.
 --   * Only the sender and the recipient can read a message. Nobody can edit or delete one, and
@@ -66,6 +72,25 @@ create table if not exists public.profiles (
 
 -- Version 4: a mobile number, so the people you share with can text you from the app.
 alter table public.profiles add column if not exists phone text not null default '' check (char_length(phone) <= 30);
+
+-- Version 5: hold each week until it's shared. Payers see shifts that start before shared_through.
+alter table public.profiles add column if not exists hold_weeks boolean not null default false;
+alter table public.profiles add column if not exists shared_through timestamptz;
+
+-- A shared week can't be unshared: shared_through only ever moves forward.
+create or replace function public.keep_shared_through() returns trigger
+language plpgsql set search_path = public
+as $$
+begin
+  if old.shared_through is not null and (new.shared_through is null or new.shared_through < old.shared_through) then
+    raise exception 'A shared week can''t be unshared' using errcode = '23514';
+  end if;
+  return new;
+end
+$$;
+drop trigger if exists keep_shared_through on public.profiles;
+create trigger keep_shared_through before update on public.profiles
+  for each row execute function public.keep_shared_through();
 
 create index if not exists shares_viewer_email_idx on public.shares (viewer_email);
 
@@ -172,6 +197,17 @@ as $$
   select other is not null and other <> auth.uid() and exists (select 1 from public.my_contacts() c where c.id = other)
 $$;
 
+-- True when a caregiver has shared the week this shift starts in (always true when they don't hold weeks).
+create or replace function public.shift_released(the_owner uuid, the_start timestamptz) returns boolean
+language sql stable security definer set search_path = public
+as $$
+  select not exists (
+    select 1 from public.profiles p
+    where p.id = the_owner and p.hold_weeks
+      and (p.shared_through is null or the_start >= p.shared_through)
+  )
+$$;
+
 -- ---------- Access rules (row level security) ----------
 
 alter table public.schedule enable row level security;
@@ -190,7 +226,7 @@ create policy "owner manages own shifts" on public.shifts
 drop policy if exists "shared viewers read shifts" on public.shifts;
 create policy "shared viewers read shifts" on public.shifts
   for select to authenticated
-  using (public.can_view_shift(owner, person));
+  using (public.can_view_shift(owner, person) and public.shift_released(owner, start_at));
 
 -- Shares: owners manage their own share list.
 drop policy if exists "owner manages own shares" on public.shares;
@@ -275,3 +311,5 @@ grant insert (recipient, body) on public.messages to authenticated;
 grant update (read_at) on public.messages to authenticated;
 grant execute on function public.my_contacts(), public.can_message(uuid) to authenticated;
 revoke execute on function public.my_contacts(), public.can_message(uuid) from anon, public;
+grant execute on function public.shift_released(uuid, timestamptz) to authenticated;
+revoke execute on function public.shift_released(uuid, timestamptz) from anon, public;
