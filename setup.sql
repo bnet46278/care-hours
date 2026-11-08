@@ -10,6 +10,15 @@
 --     never change them. Shifts with no patient name are never shared.
 --   * Everyone else sees nothing.
 --
+-- Version 7 lets several caregivers share one patient card.
+--   * The caregiver who set up a card adds other caregivers by email. They can read and edit the card and
+--     log shifts for that patient; only the caregiver who set it up can add or remove caregivers, rename the
+--     patient or remove the card. An added caregiver can leave the card.
+--   * A payer sees the card when any of its caregivers shares that patient with them.
+--   * A caregiver who adds a patient whose name, date of birth and phone number all match a card already in
+--     Care Hours is added to that card instead of making a second one (join_matching_patient).
+-- If you ran version 6, run this whole file again. Nothing you already have is changed.
+--
 -- Version 6 adds patient cards: name, date of birth, address, email, phone, notes, and who pays.
 --   * The caregiver who creates a card owns it. Payers they share that patient with can read and edit it,
 --     but only the caregiver can add a card, rename it or remove it.
@@ -158,6 +167,17 @@ create table if not exists public.patients (
   primary key (owner, id)
 );
 
+-- Version 7: the other caregivers on a patient card, by email (they may not have signed up yet).
+create table if not exists public.patient_members (
+  owner         uuid        not null,
+  id            text        not null,
+  member_email  text        not null check (member_email = lower(btrim(member_email)) and position('@' in member_email) > 1),
+  created_at    timestamptz not null default now(),
+  primary key (owner, id, member_email),
+  foreign key (owner, id) references public.patients (owner, id) on delete cascade
+);
+create index if not exists patient_members_email_idx on public.patient_members (member_email);
+
 -- ---------- Helper ----------
 
 -- The signed-in person's email, lowercased. Supabase only issues a session after the
@@ -232,6 +252,68 @@ as $$
     where p.id = the_owner and p.hold_weeks
       and (p.shared_through is null or the_start >= p.shared_through)
   )
+$$;
+
+-- True when the signed-in caregiver was added to this patient card.
+create or replace function public.is_patient_member(the_owner uuid, the_id text) returns boolean
+language sql stable security definer set search_path = public
+as $$
+  select public.my_email() <> '' and exists (
+    select 1 from public.patient_members m
+    where m.owner = the_owner and m.id = the_id and m.member_email = public.my_email()
+  )
+$$;
+
+-- True when a payer may see this card: the caregiver who set it up, or any caregiver on it,
+-- shares that patient with them.
+create or replace function public.can_view_patient(the_owner uuid, the_id text, the_person text) returns boolean
+language sql stable security definer set search_path = public
+as $$
+  select public.can_view_shift(the_owner, the_person) or exists (
+    select 1 from public.patient_members m join auth.users u on lower(u.email) = m.member_email
+    where m.owner = the_owner and m.id = the_id and public.can_view_shift(u.id, the_person)
+  )
+$$;
+
+-- Who set up each patient card you can see (theirs is the name shown on the card).
+create or replace function public.patient_card_owners()
+returns table (owner uuid, name text)
+language sql stable security definer set search_path = public
+as $$
+  select distinct p.owner, coalesce(nullif(pr.display_name, ''), u.email)
+  from public.patients p
+    join auth.users u on u.id = p.owner
+    left join public.profiles pr on pr.id = p.owner
+  where p.owner <> auth.uid() and not p.deleted
+    and (public.is_patient_member(p.owner, p.id) or public.can_view_patient(p.owner, p.id, p.person))
+$$;
+
+-- Adding a patient who's already in Care Hours: when the name, date of birth and phone number all match
+-- another caregiver's card, add the signed-in caregiver to that card (instead of making a second card) and
+-- say which card it was. All three must be given and match exactly; otherwise nothing happens.
+create or replace function public.join_matching_patient(the_person text, the_birth date, the_phone text)
+returns table (owner uuid, id text)
+language plpgsql volatile security definer set search_path = public
+as $$
+declare hit record;
+begin
+  if auth.uid() is null or public.my_email() = '' or the_birth is null
+     or coalesce(btrim(the_phone), '') = '' or public.same_person(the_person) = '' then
+    return;
+  end if;
+  select p.owner, p.id into hit
+  from public.patients p
+  where not p.deleted and p.owner <> auth.uid()
+    and public.same_person(p.person) = public.same_person(the_person)
+    and p.birth_date = the_birth and p.phone = btrim(the_phone)
+  order by p.updated_at, p.owner, p.id
+  limit 1;
+  if not found then return; end if;
+  insert into public.patient_members (owner, id, member_email) values (hit.owner, hit.id, public.my_email())
+    on conflict do nothing;
+  owner := hit.owner; id := hit.id;
+  return next;
+end
 $$;
 
 -- Payers can edit a patient card, but only the caregiver who owns it can rename or remove it.
@@ -321,16 +403,34 @@ create policy "owner manages own patients" on public.patients
   using (owner = auth.uid())
   with check (owner = auth.uid());
 
--- Patient cards: payers read and edit the cards of patients shared with them (not add or remove).
+-- Patient cards: caregivers added to a card, and payers of a patient shared with them, read and edit it
+-- (they can't add or remove a card, or rename the patient; see guard_patient_edit).
 drop policy if exists "shared viewers read patients" on public.patients;
 create policy "shared viewers read patients" on public.patients
   for select to authenticated
-  using (public.can_view_shift(owner, person));
+  using (public.is_patient_member(owner, id) or public.can_view_patient(owner, id, person));
 drop policy if exists "shared viewers edit patients" on public.patients;
 create policy "shared viewers edit patients" on public.patients
   for update to authenticated
-  using (public.can_view_shift(owner, person))
-  with check (public.can_view_shift(owner, person));
+  using (public.is_patient_member(owner, id) or public.can_view_patient(owner, id, person))
+  with check (public.is_patient_member(owner, id) or public.can_view_patient(owner, id, person));
+
+-- Caregivers on a card: the caregiver who set it up adds and removes them.
+alter table public.patient_members enable row level security;
+drop policy if exists "owner manages card caregivers" on public.patient_members;
+create policy "owner manages card caregivers" on public.patient_members
+  for all to authenticated
+  using (owner = auth.uid())
+  with check (owner = auth.uid() and member_email <> public.my_email());
+-- Caregivers on a card see who else is on it, and can leave it.
+drop policy if exists "card caregivers see each other" on public.patient_members;
+create policy "card caregivers see each other" on public.patient_members
+  for select to authenticated
+  using (public.is_patient_member(owner, id));
+drop policy if exists "card caregivers can leave" on public.patient_members;
+create policy "card caregivers can leave" on public.patient_members
+  for delete to authenticated
+  using (member_email = public.my_email() and public.my_email() <> '');
 
 -- Messages: only the sender and the recipient can read them.
 alter table public.messages enable row level security;
@@ -375,3 +475,8 @@ grant execute on function public.my_contacts(), public.can_message(uuid) to auth
 revoke execute on function public.my_contacts(), public.can_message(uuid) from anon, public;
 grant execute on function public.shift_released(uuid, timestamptz) to authenticated;
 revoke execute on function public.shift_released(uuid, timestamptz) from anon, public;
+-- Version 7: shared patient cards.
+revoke all on public.patient_members from anon;
+grant select, insert, delete on public.patient_members to authenticated;
+grant execute on function public.is_patient_member(uuid, text), public.can_view_patient(uuid, text, text), public.patient_card_owners(), public.join_matching_patient(text, date, text) to authenticated;
+revoke execute on function public.is_patient_member(uuid, text), public.can_view_patient(uuid, text, text), public.patient_card_owners(), public.join_matching_patient(text, date, text) from anon, public;

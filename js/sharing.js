@@ -53,7 +53,7 @@ async function loadSharedWithMe() {
 async function loadSharedShifts() {
   sharedErr = "";
   const ids = [...new Set(sharedPairs.map(r => r.owner))];
-  if (!sb || !ids.length) { sharedAll = []; sharedCards = []; return; }
+  if (!sb || !ids.length) { sharedAll = []; return; }
   try {
     const rows = await fetchAll(() => sb.from("shifts").select("*").in("owner", ids).eq("deleted", false).order("id"));
     // The database only returns shared patients; this double-checks each shift against its share.
@@ -63,7 +63,6 @@ async function loadSharedShifts() {
     const srows = await fetchAll(() => sb.from("schedule").select("*").in("owner", ids).eq("deleted", false).order("id"));
     sharedSched = srows.map(r => ({ ...schedFromRow(r), owner: r.owner }))
       .filter(x => x.kind === "off" ? ids.includes(x.owner) : allowed.has(x.owner + "|" + samePerson(x.person)));
-    await loadSharedCards(ids, allowed);
     sharedLoadedAt = Date.now();
   } catch (e) {
     sharedErr = "Couldn't load the latest hours. Check your connection and tap Refresh.";
@@ -84,12 +83,16 @@ async function onSignedIn(session) {
     await sb.from("profiles").upsert({ id: me.id, email: me.email });
   }
   await loadSharedWithMe();
+  await loadCardSharing();
+  renderAll();
   startMessaging();
 }
 function onSignedOut() {
   stopMessaging();
   holdUi = { confirm: null, busy: false, err: "" };
   me = null; nameSavedNow = null; shares = []; profile = { display_name: "" }; sharedPairs = []; sharedPatients = []; sharedAll = []; sharedSched = []; sharedCaregiver = "all"; caregiverNames = {}; view = "mine";
+  memberCards = []; sharedCards = []; cardMembers = {}; cardOwnerNames = {}; setLS(LS_MEMBER_CARDS, null);
+  pcUi = { ...pcUi, open: null, edit: false, isNew: false };
   setSync("off"); renderAll();
 }
 
@@ -114,7 +117,7 @@ function initSync() {
     if (document.visibilityState === "visible" && me) { pull(); if (sharedPatients.length) refreshShared(); }
   });
 }
-async function refreshShared() { await loadSharedShifts(); renderAll(); }
+async function refreshShared() { await loadSharedShifts(); await loadCardSharing(); renderAll(); }
 
 // ================= render: sync & sharing card =================
 function syncLine() {
