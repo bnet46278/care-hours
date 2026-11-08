@@ -9,24 +9,27 @@
 //     and shared_through can never move back (version 5)
 //   * patient cards: the caregiver owns them; payers who can see that patient can read and edit them,
 //     but can't add, rename or remove one (version 6)
+//   * caregivers added to a patient card read and edit it too, and payers see it when any of its
+//     caregivers shares that patient with them; only the caregiver who set it up adds or removes caregivers,
+//     and an added caregiver can leave (version 7)
 //   * signed-out visitors get nothing
 const { randomUUID } = require("crypto");
 
 // "Mom", "mom" and " Mom " are the same patient, as in setup.sql.
 const samePerson = p => String(p || "").replace(/\s+/g, " ").trim().toLowerCase();
-const KEYS = { shifts: ["owner", "id"], schedule: ["owner", "id"], shares: ["owner", "viewer_email", "person"], profiles: ["id"], messages: ["id"], patients: ["owner", "id"] };
-const OWNER = { shifts: "owner", schedule: "owner", shares: "owner", profiles: "id", messages: "sender", patients: "owner" };
+const KEYS = { shifts: ["owner", "id"], schedule: ["owner", "id"], shares: ["owner", "viewer_email", "person"], profiles: ["id"], messages: ["id"], patients: ["owner", "id"], patient_members: ["owner", "id", "member_email"] };
+const OWNER = { shifts: "owner", schedule: "owner", shares: "owner", profiles: "id", messages: "sender", patients: "owner", patient_members: "owner" };
 // Columns people may set themselves, as granted in setup.sql (everything else is filled in by the database).
 const INSERT_COLS = { messages: ["recipient", "body"] };
 const UPDATE_COLS = { messages: ["read_at"] };
 
 class FakeDb {
   // now: the time the database clock starts at (each new row is a second later than the last).
-  // version: acts like a database set up with that version of setup.sql (5: no patient cards; 4: also no week holding; 3: also no messages or phone numbers).
-  constructor({ now = Date.now(), version = 6 } = {}) {
+  // version: acts like a database set up with that version of setup.sql (6: no shared patient cards; 5: no patient cards; 4: also no week holding; 3: also no messages or phone numbers).
+  constructor({ now = Date.now(), version = 7 } = {}) {
     this.version = version;
     this.users = new Map();   // email -> id
-    this.tables = { shifts: [], schedule: [], shares: [], profiles: [], messages: [], patients: [] };
+    this.tables = { shifts: [], schedule: [], shares: [], profiles: [], messages: [], patients: [], patient_members: [] };
     this.clock = +now;
     this.onChange = null;     // called with the table name after a write, like Supabase's live updates
   }
@@ -50,6 +53,24 @@ class FakeDb {
     for (const s of this.tables.shares) if (me.email && s.viewer_email === me.email && s.owner !== me.id) rows.push([s.owner, this.emailOf(s.owner), "caregiver"]);
     rows.sort((a, b) => a[1].localeCompare(b[1]) || a[2].localeCompare(b[2]));
     for (const r of rows) add(...r);
+    return [...out.values()];
+  }
+  // is_patient_member(), can_view_patient() and patient_card_owners() from setup.sql
+  isMember(owner, id, me) {
+    return !!me.email && this.tables.patient_members.some(m => m.owner === owner && m.id === id && m.member_email === me.email);
+  }
+  canViewCard(owner, id, person, me) {
+    if (this.canViewPatient(owner, person, me)) return true;
+    return this.tables.patient_members.some(m => m.owner === owner && m.id === id && this.users.has(m.member_email) &&
+      this.canViewPatient(this.users.get(m.member_email), person, me));
+  }
+  cardOwners(me) {
+    const out = new Map();
+    for (const p of this.tables.patients)
+      if (p.owner !== me.id && !p.deleted && (this.isMember(p.owner, p.id, me) || this.canViewCard(p.owner, p.id, p.person, me))) {
+        const pr = this.tables.profiles.find(r => r.id === p.owner) || {};
+        out.set(p.owner, { owner: p.owner, name: pr.display_name || this.emailOf(p.owner) });
+      }
     return [...out.values()];
   }
   // shift_released() from setup.sql
@@ -76,11 +97,14 @@ class FakeDb {
     if (table === "shares") return r.owner === me.id || r.viewer_email === me.email;
     if (table === "profiles") return r.id === me.id || this.sharedWithMe(r.id, me);
     if (table === "messages") return r.sender === me.id || r.recipient === me.id;
-    if (table === "patients") return r.owner === me.id || this.canViewPatient(r.owner, r.person, me);
+    if (table === "patients") return r.owner === me.id || this.isMember(r.owner, r.id, me) || this.canViewCard(r.owner, r.id, r.person, me);
+    if (table === "patient_members") return r.owner === me.id || this.isMember(r.owner, r.id, me);
     return false;
   }
   canWrite(table, r, me) {
     if (table === "messages") return !!me.id && r.sender === me.id && this.canMessage(r.recipient, me);
+    if (table === "patient_members") return !!me.id && r.owner === me.id && r.member_email !== me.email &&
+      this.tables.patients.some(p => p.owner === r.owner && p.id === r.id);
     return !!me.id && r[OWNER[table]] === me.id;
   }
   check(table, r) {
@@ -90,6 +114,8 @@ class FakeDb {
     }
     if (table === "messages" && !(String(r.body || "").trim().length >= 1 && String(r.body).trim().length <= 2000)) return "a message needs 1 to 2000 characters";
     if (table === "profiles" && String(r.phone || "").length > 30) return "phone is too long";
+    if (table === "patient_members" && !(r.member_email === String(r.member_email || "").trim().toLowerCase() && r.member_email.indexOf("@") > 0))
+      return "member_email must be a lowercase email";
     if (table === "patients") {
       const t = String(r.person || "").trim();
       if (!t || t.length > 100) return "a patient needs a name of 1 to 100 characters";
@@ -115,10 +141,22 @@ class FakeDb {
     const me = { id: q.uid || null, email: (q.email || "").toLowerCase() };
     if (q.op === "rpc") {
       if (!me.id) return { data: null, error: { code: "42501", message: "permission denied" } };
+      if (q.name === "patient_card_owners" && this.version >= 7) return { data: this.cardOwners(me), error: null };
+      if (q.name === "join_matching_patient" && this.version >= 7) {
+        const { the_person, the_birth, the_phone } = q.args || {};
+        if (!me.email || !the_birth || !String(the_phone || "").trim() || !samePerson(the_person)) return { data: [], error: null };
+        const hit = this.tables.patients.filter(p => !p.deleted && p.owner !== me.id && samePerson(p.person) === samePerson(the_person) &&
+            p.birth_date === the_birth && p.phone === String(the_phone).trim())
+          .sort((x, y) => String(x.updated_at).localeCompare(String(y.updated_at)))[0];
+        if (!hit) return { data: [], error: null };
+        if (!this.isMember(hit.owner, hit.id, me)) this.tables.patient_members.push({ owner: hit.owner, id: hit.id, member_email: me.email, created_at: this.stamp() });
+        return { data: [{ owner: hit.owner, id: hit.id }], error: null };
+      }
       if (q.name === "my_contacts" && this.version >= 4) return { data: this.contacts(me), error: null };
       return { data: null, error: { code: "PGRST202", message: `Could not find the function public.${q.name}` } };
     }
-    const table = (this.version < 4 && q.table === "messages") || (this.version < 6 && q.table === "patients") ? null : this.tables[q.table];
+    const table = (this.version < 4 && q.table === "messages") || (this.version < 6 && q.table === "patients")
+      || (this.version < 7 && q.table === "patient_members") ? null : this.tables[q.table];
     if (this.version < 4 && q.table === "profiles" && (q.rows || []).some(r => "phone" in r))
       return { data: null, error: { code: "PGRST204", message: "Could not find the 'phone' column of 'profiles' in the schema cache" } };
     if (!table) return { data: null, error: { code: "PGRST205", message: `Could not find the table 'public.${q.table}'` } };
@@ -160,7 +198,7 @@ class FakeDb {
     if (q.op === "update") {
       if (UPDATE_COLS[q.table] && Object.keys(q.vals).some(k => !UPDATE_COLS[q.table].includes(k))) return denied;
       const mayUpdate = r => q.table === "messages" ? r.recipient === me.id
-        : q.table === "patients" ? r.owner === me.id || this.canViewPatient(r.owner, r.person, me)
+        : q.table === "patients" ? r.owner === me.id || this.isMember(r.owner, r.id, me) || this.canViewCard(r.owner, r.id, r.person, me)
         : r[OWNER[q.table]] === me.id;
       // The guard_patient_edit trigger: only the owner renames or removes a patient card.
       if (q.table === "patients") for (const r of table) if (matches(r) && r.owner !== me.id && mayUpdate(r) &&
@@ -177,7 +215,8 @@ class FakeDb {
     }
     if (q.op === "delete") {
       if (q.table === "messages") return denied;   // nobody deletes messages
-      const keep = table.filter(r => !(matches(r) && this.canWrite(q.table, r, me)));
+      const mayDelete = r => q.table === "patient_members" ? r.owner === me.id || (!!me.email && r.member_email === me.email) : this.canWrite(q.table, r, me);
+      const keep = table.filter(r => !(matches(r) && mayDelete(r)));
       this.tables[q.table] = keep;
       return { data: null, error: null };
     }

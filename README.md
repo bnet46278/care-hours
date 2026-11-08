@@ -25,7 +25,8 @@ It works two ways:
 | `js/app.js` | Tabs, drawing the page, and starting the app (loaded last) |
 | `config.js` | Your Supabase project settings. Empty means online sync is off |
 | `setup.sql` | Creates the database tables and the access rules |
-| `sw.js` | Lets the app open without internet. Bump `VERSION` whenever you change a file, and list any new file in `FILES` |
+| `sw.js` | Lets the app open without internet. List any new file in `FILES`. `VERSION` goes up by itself (see below) |
+| `.github/workflows/bump-version.yml` | Raises `VERSION` in `sw.js` by one each time app files reach the main branch, such as when a pull request is merged. Changes to only tests, the READMEs or `setup.sql` don't raise it |
 | `manifest.json`, `*.png` | The home-screen name and icon |
 | `tests/` | Automated Playwright tests. See `tests/README.md` |
 
@@ -59,6 +60,8 @@ The scripts are plain browser scripts with no build step. They share one set of 
 - **Payers:** **Shifts** (every shift shared with them, from all caregivers) and **Schedule** (what's scheduled), with a picker at the top for all caregivers or one. Payers can't change anything.
 - **Messages** (both sides, once a patient is shared): a conversation with each person you share with, or who shares with you. New messages appear right away while the app is open, and the tab shows how many are unread. Messages need a connection; one that can't be sent stays in the box. A payer who hasn't signed in to Care Hours yet is listed but can't get messages until they do.
 - **Patients card:** a card for each patient with name, date of birth (the age is worked out), address, email, phone, the payer (name, relationship, address, email, phone) and patient notes. "The patient is the payer" fills the payer with the patient's own details. Patients are always picked from this list (clocking in, adding a shift, the schedule, sharing); **+ New patient** next to any picker adds one. Payers can view and edit the cards of patients shared with them, but only the caregiver adds, renames or removes a patient. Removing a patient keeps their logged shifts.
+- **Several caregivers, one card:** the caregiver who set up a card adds the other caregivers by email (Caregivers, on the card). They see and edit the same card and can pick that patient when logging shifts; they can leave the card, but only the caregiver who set it up adds or removes caregivers, renames the patient or removes the card. A caregiver who adds a patient whose name, date of birth and phone number all match a card already in Care Hours is added to that card instead of making a second one. Payers see the card when any of its caregivers shares the patient with them.
+- **The payer is shared automatically:** when a caregiver adds a patient, joins a card, or changes the payer's email on a card, that payer gets the caregiver's shifts for the patient, as if shared under Sync & sharing.
 - **Hold each week** (Sync & sharing, caregivers): payers don't see the current week's worked shifts until the caregiver taps **Share this week**. Sharing can't be undone, and earlier weeks that weren't shared yet can be shared too. Shifts in a shared week can still be fixed, and payers see the fix. The schedule is never held. Turning the option off shares everything.
 - **Text button:** anyone can add a mobile number on their account card. The people they share with then get a **Text** button in Messages that opens the phone's own Messages app, addressed to them.
 - **Time off wins.** A scheduled shift during the caregiver's time off is skipped and doesn't count as scheduled. **Skip this day** on a repeating shift adds time off for just that shift. Payers see time off only as "unavailable".
@@ -84,6 +87,8 @@ The `tests` folder has automated Playwright tests that use the app like a caregi
 If you change `setup.sql` (or pull a new version of it), run the whole file again in the Supabase SQL Editor. It's safe to run more than once.
 
 Version 4 of `setup.sql` adds messages and mobile numbers. Until you run it, the app works as before and the Messages tab stays hidden.
+
+Version 7 lets several caregivers share one patient card, and joins matching patients. Until you run it, each caregiver keeps their own card and "Add a caregiver" asks for the latest setup.sql.
 
 Version 6 adds patient cards. Until you run it, cards are kept on each device but don't sync, and payers can't see them.
 

@@ -6,7 +6,13 @@
 // Payers who can see a patient can also read and edit that patient's card, but only the caregiver adds,
 // renames or removes one (see setup.sql).
 
-let pcUi = { open: null, edit: false, isNew: false, confirmDel: false, err: "", busy: false, returnTo: null };
+let pcUi = { open: null, edit: false, isNew: false, confirmDel: false, err: "", busy: false, returnTo: null,
+  memberErr: "", memberOk: "", memberBusy: false, confirmMember: null, confirmLeave: false };
+// Who set up a card: shown as "Cynda B.'s card" to the other caregivers and payers.
+const ownerName = id => cardOwnerNames[id] || cgName(id);
+// The key used for a card's caregivers list.
+const memberKey = c => (c.owner || (me && me.id)) + "|" + c.id;
+const isMine = c => !c.owner || (me && c.owner === me.id);
 
 // One card per patient name, with the same id on every device, so two phones never make two cards for "Mom".
 const cardId = name => "p-" + samePerson(name);
@@ -24,7 +30,8 @@ const longDate = dob => new Intl.DateTimeFormat(undefined, { month: "short", day
 // Every patient name already used on a shift, the schedule or a share gets a card, so it stays in the list.
 // A patient whose card was removed isn't brought back.
 function ensureCards() {
-  const have = new Set(pcards.map(c => samePerson(c.person)));
+  // Patients on a card another caregiver added you to don't need a card of your own.
+  const have = new Set([...pcards, ...memberCards].map(c => samePerson(c.person)));
   const used = new Set([...mine(), ...sched.filter(e => !e.deleted && e.kind !== "off"), ...shares].map(x => samePerson(x.person)).filter(Boolean));
   let added = false;
   for (const name of patients()) {
@@ -76,7 +83,8 @@ function renderPatients() {
   const ro = readOnly();
   // Keep a form intact while someone is typing in it.
   if (pcUi.edit && $("pcForm") && el.contains(document.activeElement)) return;
-  const cards = ro ? sharedCardsShown() : liveCards();
+  const cards = ro ? sharedCardsShown()
+    : [...liveCards(), ...memberCards].sort((a, b) => a.person.localeCompare(b.person) || (isMine(a) ? -1 : isMine(b) ? 1 : 0));
   const missing = ro ? sharedWithoutCards() : [];
   const count = cards.length;
   el.innerHTML = `
@@ -86,6 +94,7 @@ function renderPatients() {
       ${ro ? "" : `<div class="tools"><button class="ghost" id="addPatient">+ Add patient</button></div>`}
     </div>
     <div id="patientsBody"${patientsOpen ? "" : " hidden"}>
+      ${pcUi.notice && !ro ? `<p class="ok-msg" id="pcNotice">${esc(pcUi.notice)}</p>` : ""}
       ${pcUi.isNew && !ro ? `<div class="pcnew">${cardForm(null)}</div>` : ""}
       ${count ? `<ul class="pclist">${cards.map(c => cardRow(c, ro)).join("")}</ul>`
         : !pcUi.isNew ? `<p class="empty">${ro ? "No patient cards yet." : "No patients yet. Add a patient to start logging shifts for them."}</p>` : ""}
@@ -98,9 +107,18 @@ function renderPatients() {
   if ($("addPatient")) $("addPatient").addEventListener("click", () => newCard(null));
   el.querySelectorAll("[data-pc]").forEach(b => b.addEventListener("click", () => {
     const k = b.dataset.pc;
-    pcUi = { ...pcUi, open: pcUi.open === k && !pcUi.edit ? null : k, edit: false, isNew: false, confirmDel: false, err: "" };
+    pcUi = { ...pcUi, open: pcUi.open === k && !pcUi.edit ? null : k, edit: false, isNew: false, confirmDel: false, err: "", notice: "",
+      memberErr: "", memberOk: "", confirmMember: null, confirmLeave: false };
     renderPatients();
   }));
+  // Caregivers on a card.
+  if ($("pcInvite")) $("pcInvite").addEventListener("submit", inviteCaregiver);
+  el.querySelectorAll("[data-pc-unmember]").forEach(b => b.addEventListener("click", () => { pcUi.confirmMember = b.dataset.pcUnmember; renderPatients(); }));
+  el.querySelectorAll("[data-pc-unmember-no]").forEach(b => b.addEventListener("click", () => { pcUi.confirmMember = null; renderPatients(); }));
+  el.querySelectorAll("[data-pc-unmember-yes]").forEach(b => b.addEventListener("click", () => removeCaregiver(b.dataset.pcUnmemberYes)));
+  el.querySelectorAll("[data-pc-leave]").forEach(b => b.addEventListener("click", () => { pcUi.confirmLeave = true; renderPatients(); }));
+  el.querySelectorAll("[data-pc-leave-no]").forEach(b => b.addEventListener("click", () => { pcUi.confirmLeave = false; renderPatients(); }));
+  el.querySelectorAll("[data-pc-leave-yes]").forEach(b => b.addEventListener("click", leaveCard));
   el.querySelectorAll("[data-pc-edit]").forEach(b => b.addEventListener("click", () => { pcUi = { ...pcUi, edit: true, err: "" }; renderPatients(); focusForm(); }));
   el.querySelectorAll("[data-pc-del]").forEach(b => b.addEventListener("click", () => { pcUi.confirmDel = true; renderPatients(); }));
   el.querySelectorAll("[data-pc-delno]").forEach(b => b.addEventListener("click", () => { pcUi.confirmDel = false; renderPatients(); }));
@@ -125,7 +143,10 @@ function cardRow(c, ro) {
   const k = cardKey(c), open = pcUi.open === k;
   const age = ageOf(c.birthDate);
   const payer = c.payerSame ? "Pays for themselves" : c.payerName ? `Payer: ${c.payerName}${c.payerRel ? ` (${c.payerRel})` : ""}` : "";
-  const sub = [age !== null ? `Age ${age}` : "", payer, ro ? `${cgName(c.owner)}'s card` : ""].filter(Boolean).join(" · ");
+  const theirs = !isMine(c);
+  const dup = !theirs && !ro && memberCards.find(m => samePerson(m.person) === samePerson(c.person));
+  const sub = [age !== null ? `Age ${age}` : "", payer, theirs ? `${ownerName(c.owner)}'s card` : "",
+    theirs && !ro ? "shared with you" : "", dup ? `also on ${ownerName(dup.owner)}'s card` : ""].filter(Boolean).join(" · ");
   const color = tint(c);   // patient color for caregivers, caregiver color for payers
   return `<li class="pcard${color}${open ? " open" : ""}">
     <button type="button" class="prow" data-pc="${esc(k)}" aria-expanded="${open}">
@@ -152,9 +173,10 @@ function cardDetails(c, ro) {
     ${!c.birthDate && !c.address && !c.email && !c.phone ? `<p class="hint">Nothing filled in yet.</p>` : ""}
     <h3>Payer</h3>${payer}
     <h3>Notes</h3>${c.notes ? `<p class="pre">${esc(c.notes)}</p>` : `<p class="hint">No notes.</p>`}
+    ${ro ? "" : caregiversSection(c)}
     <div class="formacts">
       <button type="button" class="btn" data-pc-edit="1">Edit</button>
-      ${ro ? "" : pcUi.confirmDel
+      ${ro || !isMine(c) ? "" : pcUi.confirmDel
         ? `<span class="confirm">Remove ${esc(c.person)} from your patients? Shifts already logged stay.
            <button type="button" class="link danger" data-pc-delyes="1">Remove</button><button type="button" class="link" data-pc-delno="1">Cancel</button></span>`
         : `<button type="button" class="link danger" data-pc-del="1">Remove patient</button>`}
@@ -211,7 +233,7 @@ function wireForm() {
 }
 function currentCard() {
   if (!pcUi.open) return null;
-  return (readOnly() ? sharedCards : liveCards()).find(c => cardKey(c) === pcUi.open) || null;
+  return (readOnly() ? sharedCards : [...liveCards(), ...memberCards]).find(c => cardKey(c) === pcUi.open) || null;
 }
 
 async function saveCard(ev) {
@@ -222,6 +244,8 @@ async function saveCard(ev) {
   const person = pcUi.isNew ? val("pcName").replace(/\s+/g, " ") : prev && prev.person;
   if (!person) return err("Enter the patient's name.");
   if (pcUi.isNew && liveCards().some(c => samePerson(c.person) === samePerson(person))) return err(`You already have a patient named ${liveCards().find(c => samePerson(c.person) === samePerson(person)).person}.`);
+  const shared = pcUi.isNew && memberCards.find(c => samePerson(c.person) === samePerson(person));
+  if (shared) return err(`${ownerName(shared.owner)} already shares a card for ${shared.person} with you.`);
   const dob = val("pcDob");
   if (dob && (!/^\d{4}-\d\d-\d\d$/.test(dob) || parseDate(dob) > new Date() || dob < "1900-01-01")) return err("Enter a date of birth that isn't in the future.");
   const same = $("pcSame").checked;
@@ -239,23 +263,63 @@ async function saveCard(ev) {
     if (p === null) return err(`Enter ${label} phone number with its area code, like 317-555-0123.`);
     c[k] = p;
   }
-  if (readOnly()) return savePayerEdit(prev, c);
+  if (readOnly() || (prev && !isMine(prev))) return saveSharedEdit(prev, c);
+  const back = pcUi.returnTo;
+  // A patient already in Care Hours (same name, date of birth and phone): join that card instead of making another.
+  if (pcUi.isNew) {
+    const joined = await joinMatchingPatient(c);
+    if (joined) {
+      pcUi = { ...pcUi, open: cardKey(joined), edit: false, isNew: false, err: "", returnTo: null,
+        notice: `${joined.person} is already in Care Hours, on ${ownerName(joined.owner)}'s card. You've been added to that card instead of making a new one.` };
+      renderAll();
+      await sharePayer(joined, null);
+      pickFor(back, joined.person);
+      return;
+    }
+  }
   // A patient removed earlier and added again gets their old card back.
   const old = pcards.find(x => x.id === (prev ? prev.id : cardId(person)));
   const key = cardKey({ id: old ? old.id : cardId(person) });
-  const back = pcUi.returnTo;
-  pcUi = { ...pcUi, open: key, edit: false, isNew: false, err: "", returnTo: null };
+  pcUi = { ...pcUi, open: key, edit: false, isNew: false, err: "", returnTo: null, notice: "" };
   putCard({ ...(old || {}), ...c, id: old ? old.id : cardId(person), deleted: false, updatedAt: old ? old.updatedAt : 0 });
-  // Back to the form that asked for a new patient, with the new patient picked.
-  if (back && $(back)) {
-    $(back).value = person;
-    $(back).dispatchEvent(new Event("change", { bubbles: true }));
-    $(back).scrollIntoView({ block: "center", behavior: "smooth" });
-    $(back).focus({ preventScroll: true });
-  }
+  await sharePayer(c, prev);
+  pickFor(back, person);
 }
-// Payers save straight to the online database (they have no copy on their device).
-async function savePayerEdit(prev, c) {
+// Back to the form that asked for a new patient, with the new patient picked.
+function pickFor(back, person) {
+  if (!back || !$(back)) return;
+  $(back).value = person;
+  $(back).dispatchEvent(new Event("change", { bubbles: true }));
+  $(back).scrollIntoView({ block: "center", behavior: "smooth" });
+  $(back).focus({ preventScroll: true });
+}
+// Looks for another caregiver's card with the same name, date of birth and phone, and joins it.
+async function joinMatchingPatient(c) {
+  if (!sb || !me || !c.birthDate || !c.phone) return null;
+  const { data: rows, error } = await sb.rpc("join_matching_patient", { the_person: c.person, the_birth: c.birthDate, the_phone: c.phone });
+  if (error || !rows || !rows.length) return null;   // no match, offline, or an older database: make a new card
+  await loadCardSharing();
+  return memberCards.find(m => m.owner === rows[0].owner && m.id === rows[0].id) || null;
+}
+// The payer on a card gets this caregiver's shifts for the patient: when the card is added or joined,
+// or when its payer's email changes.
+async function sharePayer(c, prev) {
+  if (!sb || !me || readOnly()) return;
+  const payerEmail = card => String((card.payerSame ? card.email : card.payerEmail) || "").trim().toLowerCase();
+  const email = payerEmail(c);
+  if (!emailOk(email) || email === (me.email || "").toLowerCase()) return;
+  if (prev && payerEmail(prev) === email) return;
+  if (shares.some(x => x.email === email && samePerson(x.person) === samePerson(c.person))) return;
+  const { error } = await sb.from("shares").insert({ owner: me.id, viewer_email: email, person: c.person });
+  if (error) return;   // offline: they can still share by hand under Sync & sharing
+  shares.push({ email, person: c.person });
+  const msg = `${c.person}'s payer, ${email}, can now see your shifts for ${c.person}.`;
+  pcUi.notice = pcUi.notice ? pcUi.notice + " " + msg : msg;
+  renderAll();
+  loadContacts().then(renderAll);
+}
+// Payers, and caregivers on someone else's card, save straight to the online database.
+async function saveSharedEdit(prev, c) {
   if (!prev || !sb) return;
   pcUi.busy = true; pcUi.err = ""; renderPatients();
   const row = cardToRow({ ...prev, ...c, updatedAt: Date.now() });
@@ -267,8 +331,9 @@ async function savePayerEdit(prev, c) {
     renderPatients(); return;
   }
   pcUi = { ...pcUi, edit: false, err: "" };
-  await loadSharedShifts();
+  await loadCardSharing();
   renderAll();
+  if (!readOnly()) await sharePayer({ ...prev, ...c }, prev);   // a caregiver on the card who changed the payer's email
 }
 
 // ---------- payers: the cards of patients shared with them ----------
@@ -277,17 +342,118 @@ function sharedCardsShown() {
     .sort((a, b) => a.person.localeCompare(b.person) || cgName(a.owner).localeCompare(cgName(b.owner)));
 }
 function sharedWithoutCards() {
-  const have = new Set(sharedCards.map(c => c.owner + "|" + samePerson(c.person)));
+  // Any card for that patient counts, even one another caregiver set up.
+  const have = new Set(sharedCards.map(c => samePerson(c.person)));
   const seen = new Set();
-  return sharedPairs.filter(r => (sharedCaregiver === "all" || r.owner === sharedCaregiver) && !have.has(r.owner + "|" + samePerson(r.person)))
+  return sharedPairs.filter(r => (sharedCaregiver === "all" || r.owner === sharedCaregiver) && !have.has(samePerson(r.person)))
     .filter(r => { const k = r.owner + "|" + samePerson(r.person); if (seen.has(k)) return false; seen.add(k); return true; });
 }
-async function loadSharedCards(ids, allowed) {
+// Cards other caregivers added you to, cards payers can see, and who's on each card.
+async function loadCardSharing() {
+  if (!sb || !me) { memberCards = []; sharedCards = []; cardMembers = {}; return; }
   try {
-    const rows = await fetchAll(() => sb.from("patients").select("*").in("owner", ids).eq("deleted", false).order("id"));
-    sharedCards = rows.map(r => ({ ...cardFromRow(r), owner: r.owner })).filter(c => allowed.has(c.owner + "|" + samePerson(c.person)));
+    const owners = await sb.rpc("patient_card_owners");
+    if (!owners.error) for (const r of owners.data) cardOwnerNames[r.owner] = r.name;
+    let mem = [];
+    try { mem = await fetchAll(() => sb.from("patient_members").select("*").order("id")); }
+    catch (e) { if (!missingTable(e)) throw e; }   // an older database: no shared cards yet
+    const byCard = {};
+    for (const m of mem) (byCard[m.owner + "|" + m.id] = byCard[m.owner + "|" + m.id] || []).push(m.member_email);
+    for (const k in byCard) byCard[k].sort();
+    cardMembers = byCard;
+    const myEmail = (me.email || "").toLowerCase();
+    const onCard = new Set(mem.filter(m => m.member_email === myEmail).map(m => m.owner + "|" + m.id));
+    let rows = [];
+    try { rows = await fetchAll(() => sb.from("patients").select("*").neq("owner", me.id).eq("deleted", false).order("id")); }
+    catch (e) { if (!missingTable(e)) throw e; }
+    const cards = rows.map(r => ({ ...cardFromRow(r), owner: r.owner }));
+    memberCards = cards.filter(c => onCard.has(c.owner + "|" + c.id));
+    sharedCards = cards.filter(c => !onCard.has(c.owner + "|" + c.id));
+    setLS(LS_MEMBER_CARDS, JSON.stringify(memberCards));
   } catch (e) {
-    if (!missingTable(e)) throw e;
-    sharedCards = [];
+    // Offline: keep what's already loaded.
   }
+}
+function loadMemberCardsSaved() {
+  try { const v = JSON.parse(getLS(LS_MEMBER_CARDS) || "[]"); return Array.isArray(v) ? v.filter(c => c && c.owner && c.person) : []; }
+  catch (e) { return []; }
+}
+document.addEventListener("visibilitychange", () => {
+  if (me && document.visibilityState === "visible") loadCardSharing().then(renderAll);
+});
+
+// ---------- caregivers on a card ----------
+function caregiversSection(c) {
+  if (!me) return isMine(c) ? `<h3>Caregivers</h3><p class="hint">Sign in under Sync &amp; sharing to add the other caregivers for ${esc(c.person)} to this card.</p>` : "";
+  const members = cardMembers[memberKey(c)] || [];
+  const myEmail = (me.email || "").toLowerCase();
+  const mineCard = isMine(c);
+  const items = [`<li><span>${mineCard ? "You" : esc(ownerName(c.owner))}</span><span class="hint">set up this card</span></li>`]
+    .concat(members.map(e => {
+      const you = e === myEmail;
+      const act = !mineCard ? "" : pcUi.confirmMember === e
+        ? `<span class="inline"><button type="button" class="link danger" data-pc-unmember-yes="${esc(e)}">Remove</button><button type="button" class="link" data-pc-unmember-no="1">Cancel</button></span>`
+        : `<button type="button" class="link danger" data-pc-unmember="${esc(e)}">Remove</button>`;
+      return `<li><span>${you ? "You" : esc(e)}</span>${act}</li>`;
+    }));
+  const dup = mineCard && memberCards.find(m => samePerson(m.person) === samePerson(c.person));
+  return `<h3>Caregivers</h3>
+    <ul class="people" id="pcCaregivers">${items.join("")}</ul>
+    ${dup ? `<p class="hint">${esc(ownerName(dup.owner))} also added you to their card for ${esc(dup.person)}. To keep just one card, remove yours; your shifts for ${esc(c.person)} stay.</p>` : ""}
+    ${mineCard ? `<form id="pcInvite" class="field" novalidate>
+        <label class="label" for="pcInviteEmail">Add a caregiver</label>
+        <div class="inline"><input id="pcInviteEmail" type="email" inputmode="email" autocomplete="off" placeholder="caregiver@example.com" value="${esc(pcUi.inviteEmail || "")}">
+        <button class="ghost" type="submit"${pcUi.memberBusy ? " disabled" : ""}>Add</button></div>
+        <p class="hint">They sign in to Care Hours with that email. They can see and edit this card and log shifts for ${esc(c.person)}. Only you can add or remove caregivers.</p>
+      </form>`
+      : pcUi.confirmLeave
+        ? `<p class="confirm">Leave ${esc(ownerName(c.owner))}'s card for ${esc(c.person)}? You won't see it any more. Shifts you logged stay.
+           <button type="button" class="link danger" data-pc-leave-yes="1">Leave</button><button type="button" class="link" data-pc-leave-no="1">Cancel</button></p>`
+        : `<button type="button" class="link danger" data-pc-leave="1">Leave this card</button>`}
+    <div class="err" role="alert" id="pcMemberErr">${esc(pcUi.memberErr)}</div>
+    <div class="ok-msg" id="pcMemberOk">${esc(pcUi.memberOk)}</div>`;
+}
+async function inviteCaregiver(ev) {
+  ev.preventDefault();
+  const c = currentCard();
+  const email = ($("pcInviteEmail").value || "").trim().toLowerCase();
+  pcUi.inviteEmail = email; pcUi.memberErr = ""; pcUi.memberOk = "";
+  const fail = m => { pcUi.memberErr = m; renderPatients(); if ($("pcInviteEmail")) $("pcInviteEmail").focus(); };
+  if (!c || !me) return;
+  if (!emailOk(email)) return fail("Enter the caregiver's full email address, like name@example.com.");
+  if (email === (me.email || "").toLowerCase()) return fail("That's your own email.");
+  if ((cardMembers[memberKey(c)] || []).includes(email)) return fail(`${email} is already on this card.`);
+  pcUi.memberBusy = true; renderPatients();
+  // The card has to be online before someone can be added to it.
+  await push();
+  const saved = pcards.find(x => x.id === c.id);
+  let error = saved && saved.dirty ? { message: "fetch" } : null;
+  if (!error) ({ error } = await sb.from("patient_members").insert({ owner: me.id, id: c.id, member_email: email }));
+  pcUi.memberBusy = false;
+  if (error) return fail(missingTable(error) ? "Adding caregivers to a card needs the latest setup.sql. Run it in Supabase, then try again."
+    : /duplicate/i.test(error.message || "") ? `${email} is already on this card.`
+    : "That didn't save. Check your connection and try again.");
+  pcUi.inviteEmail = "";
+  pcUi.memberOk = `${email} can now see and edit ${c.person}'s card.`;
+  await loadCardSharing();
+  renderAll();
+}
+async function removeCaregiver(email) {
+  const c = currentCard();
+  pcUi.confirmMember = null; pcUi.memberErr = ""; pcUi.memberOk = "";
+  if (!c || !me) return;
+  const { error } = await sb.from("patient_members").delete().eq("owner", me.id).eq("id", c.id).eq("member_email", email);
+  if (error) pcUi.memberErr = "That caregiver wasn't removed. Check your connection and try again.";
+  await loadCardSharing();
+  renderAll();
+}
+async function leaveCard() {
+  const c = currentCard();
+  pcUi.confirmLeave = false; pcUi.memberErr = "";
+  if (!c || !me) return;
+  const { error } = await sb.from("patient_members").delete().eq("owner", c.owner).eq("id", c.id).eq("member_email", (me.email || "").toLowerCase());
+  if (error) { pcUi.memberErr = "You weren't removed. Check your connection and try again."; renderPatients(); return; }
+  pcUi.open = null;
+  await loadCardSharing();
+  renderAll();
 }
