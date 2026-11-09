@@ -7,7 +7,10 @@
 //   Deleted shifts are kept as markers (deleted: true) so other devices learn about the delete.
 let shifts = [];
 let pcards = [];             // your patient cards: {id, person, birthDate, address, email, phone, notes, payerSame, payer..., updatedAt, deleted, dirty}
-let sharedCards = [];        // patient cards shared with me (payers can edit them), each with .owner
+let sharedCards = [];        // patient cards shared with me as a payer (I can edit them), each with .owner
+let memberCards = [];        // other caregivers' patient cards I was added to (I can edit them and log shifts), each with .owner
+let cardMembers = {};        // "owner|id" -> emails of the caregivers added to that card
+let cardOwnerNames = {};     // owner id -> name of the caregiver who set up a card I can see
 let sched = [];              // schedule entries: {id, kind: weekly|once|off, person, days, onDate, untilDate, startTime, endTime, note, ...}
 let view = "mine";           // "mine" (your own clock) | "plan" (your schedule) | "all" / "pplan" (payer's Shifts / Schedule) | "shared" (Caregivers tab) | "msgs" (Messages)
 let planForm = null;         // the schedule entry being added or edited
@@ -60,17 +63,24 @@ const LS_RANGE = "care-hours-range";
 const LS_CG_COLORS = "care-hours-caregiver-colors";
 const LS_PATIENTS = "care-hours-patients-v1";
 const LS_PATIENTS_OPEN = "care-hours-patients-open";
+const LS_MEMBER_CARDS = "care-hours-member-cards";   // cards shared with me by other caregivers, for using the app offline
 let patientsOpen = false;     // Patients card open or collapsed (starts collapsed; remembered on this device)
 
 // Your patient list: the patient cards. Patients are picked from this list everywhere.
 const liveCards = () => pcards.filter(c => !c.deleted).sort((a, b) => a.person.localeCompare(b.person));
-const patientList = () => liveCards().map(c => c.person);
+// Your own cards first, then cards other caregivers added you to; one entry per patient.
+function patientList() {
+  const out = new Map();
+  for (const c of [...liveCards(), ...memberCards]) if (!out.has(samePerson(c.person))) out.set(samePerson(c.person), c.person);
+  return [...out.values()].sort((a, b) => a.localeCompare(b));
+}
 // Every patient name you've used (cards, shares, schedule, shifts), for the Show picker and colors.
 // The card's spelling wins; otherwise the most recent spelling.
 function patients() {
   const m = new Map();
   const named = [...shares.map(x => ({ person: x.person, at: 0 })), ...sched.filter(e => !e.deleted && e.kind !== "off").map(e => ({ person: e.person, at: e.updatedAt })),
-    ...mine().map(s => ({ person: s.person, at: s.start })), ...liveCards().map(c => ({ person: c.person, at: Infinity }))].sort((a, b) => a.at - b.at);
+    ...mine().map(s => ({ person: s.person, at: s.start })), ...memberCards.map(c => ({ person: c.person, at: Infinity })),
+    ...liveCards().map(c => ({ person: c.person, at: Infinity }))].sort((a, b) => a.at - b.at);
   for (const x of named) if (samePerson(x.person)) m.set(samePerson(x.person), x.person.trim());
   return [...m.values()].sort((a, b) => a.localeCompare(b));
 }

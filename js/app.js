@@ -94,6 +94,7 @@ setInterval(() => {
 // ================= start =================
 shifts = loadLocal();
 pcards = loadCards();
+memberCards = loadMemberCardsSaved();
 patientsOpen = getLS(LS_PATIENTS_OPEN) === "1";
 syncOpen = getLS(LS_SYNC_OPEN) !== "0";
 rangeMode = ["week", "2weeks", "month"].includes(getLS(LS_RANGE)) ? getLS(LS_RANGE) : "week";   // open until you collapse it

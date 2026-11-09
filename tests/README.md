@@ -41,7 +41,7 @@ To run one file or one test: `npx playwright test specs/schedule.spec.js`, or `n
 | `specs/layout.spec.js` | Shifts and Schedule cards collapsed by default, Week / 2 weeks / Month, page order, the update notice |
 | `specs/messages.spec.js` | Messages both ways, live updates and unread counts, unsent messages, who can message whom, the database keeping messages private, the Text button |
 | `specs/hold-weeks.spec.js` | Holding each week: payers can't see it until it's shared, sharing can't be undone (also in the database), catching up on older weeks, turning it off and on, an older database |
-| `specs/patients.spec.js` | Patient cards: details, age, "same info" payer, checks, removing; picking patients from the list and + New patient; cards for patients already in use; syncing; payers viewing and editing; what the database allows; an older database |
+| `specs/patients.spec.js` | Patient cards: details, age, "same info" payer, checks, removing; picking patients from the list and + New patient; cards for patients already in use; syncing; payers viewing and editing; several caregivers on one card (added by a caregiver on it or the payer; leaving; removing; duplicates); a patient already in Care Hours isn't added again; sharing with the card's payer automatically; what the database allows; older databases |
 | `specs/offline.spec.js` | The app opens and works with no connection |
 | `unit/schedule-math.spec.js` | The schedule math on its own, including the night the clocks fall back |
 
