@@ -59,6 +59,9 @@ async function loadMessages() {
   }
   if (view === "msgs" && chatWith && document.visibilityState !== "hidden") await markRead(chatWith);
   renderTabs(); renderMessages();
+  // A caregiver's card (payers) shows their latest message. Leave it alone while someone is typing on the tab.
+  const typing = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+  if (view === "ppeople" && !pcUi.edit && !typing) renderPatients();
 }
 async function refreshMessaging() { await loadContacts(); await loadMessages(); renderTabs(); renderMessages(); }
 
@@ -206,11 +209,14 @@ function renderContactList() {
     <p class="hint">${payerMode() ? "You can message the caregivers who share with you." : "You can message the people you share a patient with."}
       Text opens your phone's Messages app instead${contacts.some(c => c.phone) ? "" : ", once someone adds their mobile number"}.</p>`;
 }
+// Opens the conversation with this person, from the Messages list or from a caregiver's card (payers).
+async function openChatWith(id) {
+  if (view !== "msgs") { view = "msgs"; closeForm(); closePlanForm(); }
+  chatWith = id; msgUi.err = "";
+  renderAll();
+  await markRead(chatWith);
+  renderTabs(); renderMessages();
+}
 function wireContactList(el) {
-  el.querySelectorAll("[data-chat]").forEach(b => b.addEventListener("click", async () => {
-    chatWith = b.dataset.chat; msgUi.err = "";
-    renderAll();
-    await markRead(chatWith);
-    renderTabs(); renderMessages();
-  }));
+  el.querySelectorAll("[data-chat]").forEach(b => b.addEventListener("click", () => openChatWith(b.dataset.chat)));
 }

@@ -199,6 +199,7 @@ function renderCaregivers(el) {
       ${open ? `<div class="pcdetails cgdetails">
         <h3>Caregiver Details</h3>
         ${line("Name", cgName(id)) + line("Phone", phone, tel(phone)) + line("Email", email, mail(email))}
+        ${cgMessages(id)}
         <h3>Patients</h3>
         ${cards.length ? `<ul class="pclist">${cards.map(p => cardRow(p.card, true)).join("")}</ul>` : ""}
         ${noCard.length ? `<p class="hint">${noCard.map(p => `${esc(cgName(id))} hasn't set up a card for ${esc(p.person)} yet.`).join(" ")}</p>` : ""}
@@ -218,7 +219,22 @@ function renderCaregivers(el) {
       memberErr: "", memberOk: "", confirmMember: null, confirmLeave: false };
     renderPatients();
   }));
+  el.querySelectorAll("[data-cg-msg]").forEach(b => b.addEventListener("click", () => openChatWith(b.dataset.cgMsg)));
   wireCards(el);
+}
+// The payer's conversation with this caregiver: the last message, how many are unread, and a button to open it.
+function cgMessages(id) {
+  if (!msgTab()) return "";
+  const c = contactById(id);
+  if (!c) return "";
+  const t = threadWith(id), last = t[t.length - 1], n = unreadFrom(id);
+  const preview = last ? (last.sender === me.id ? "You: " : "") + last.body : `No messages with ${cgName(id)} yet.`;
+  return `<h3>Messages</h3>
+    <div class="cgmsg${n ? " unread" : ""}">
+      <span class="preview">${esc(preview)}</span>
+      <span class="sendbtns">${textButton(c)}<button type="button" class="btn" data-cg-msg="${esc(id)}"
+        aria-label="${esc(n ? `Message ${cgName(id)}, ${n} unread` : `Message ${cgName(id)}`)}">Message${n ? ` <span class="badge">${n}</span>` : ""}</button></span>
+    </div>`;
 }
 
 function newCard(returnTo) {

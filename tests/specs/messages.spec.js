@@ -77,6 +77,27 @@ test.describe("Messages", () => {
     await expect(pat.$(".bubble.theirs")).toContainText("Mom had a good day today.");
   });
 
+  test("a payer sees and opens a caregiver's messages from the Caregivers tab", async ({ openApp }) => {
+    const { cynda, pat } = await cyndaAndPat(openApp);
+    await pat.openPatients();
+    const card = pat.$(".cgcard").filter({ hasText: "Cynda B." });   // the only caregiver, so it's open
+    await expect(card.locator(".cgmsg")).toContainText("No messages with Cynda B. yet.");
+
+    // Cynda writes while Pat is on the Caregivers tab: the card shows it, unread.
+    await openChat(cynda, "Pat P.");
+    await send(cynda, "Mom napped after lunch.");
+    await expect(card.locator(".cgmsg")).toContainText("Mom napped after lunch.");
+    const btn = card.locator("[data-cg-msg]");
+    await expect(btn).toHaveAttribute("aria-label", "Message Cynda B., 1 unread");
+
+    // Message opens the conversation with Cynda and marks it read.
+    await btn.click();
+    await expect(pat.$("#msgs")).toBeVisible();
+    await expect(pat.$(".chathead h2")).toHaveText("Cynda B.");
+    await expect(pat.$(".bubble.theirs")).toContainText("Mom napped after lunch.");
+    await expect(pat.$("#msgBadge")).toBeHidden();
+  });
+
   test("the Messages tab hides the hours, and the other tabs bring them back", async ({ openApp }) => {
     const { cynda } = await cyndaAndPat(openApp);
     await expect(cynda.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Patients", "Messages"]);
