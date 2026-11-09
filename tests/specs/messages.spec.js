@@ -79,7 +79,7 @@ test.describe("Messages", () => {
 
   test("the Messages tab hides the hours, and the other tabs bring them back", async ({ openApp }) => {
     const { cynda } = await cyndaAndPat(openApp);
-    await expect(cynda.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Messages"]);
+    await expect(cynda.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Client/Patient", "Messages"]);
     await msgTab(cynda).click();
     await expect(cynda.$("#msgs")).toBeVisible();
     for (const id of ["#weekCard", "#clock", "#logSection", "#byCaregiver"]) await expect(cynda.$(id)).toBeHidden();

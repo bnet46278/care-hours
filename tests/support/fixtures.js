@@ -113,12 +113,16 @@ class CareHours {
 
   // ---------- logging shifts ----------
   async clockIn(patient) {
+    await this.toShifts();
     if (patient !== undefined) await this.$("#personIn").selectOption(await this.ensurePatient(patient));
     await this.$("#clockBtn").click();
   }
   async clockOut() { await this.$("#clockBtn").click(); }
+  // Shifts are added on the Shifts tab.
+  async toShifts() { if (await this.$("#addBtn").isHidden()) await this.$("#tabMine").click(); }
   async addShift({ date, start, end, patient, note = "" }) {
     const name = await this.ensurePatient(patient ?? "");
+    await this.toShifts();
     await this.$("#addBtn").click();
     await this.$("#fDate").fill(date);
     await this.$("#fStart").fill(start);
@@ -147,9 +151,9 @@ class CareHours {
     await this.addPatient({ name });
     return name.replace(/\s+/g, " ").trim();
   }
-  // Open the Patients card (if it's collapsed), then one patient's card (if it's closed).
+  // The Client/Patient tab, then one patient's card (if it's closed).
   async openPatients() {
-    if (await this.$("#patientsBody").isHidden()) await this.$("#patientsToggle").click();
+    if ((await this.$("#tabPeople").getAttribute("aria-selected")) !== "true") await this.$("#tabPeople").click();
     await expect(this.$("#patientsBody")).toBeVisible();
   }
   async openCard(name) {
@@ -158,21 +162,28 @@ class CareHours {
     if ((await b.getAttribute("aria-expanded")) !== "true") await b.click();
     await expect(this.$("#pcDetails")).toBeVisible();
   }
-  async addPatient({ name, dob, address, email, phone, notes, same, payer = {} }) {
+  // Adds a patient on the Client/Patient tab, then goes back to the tab you were on.
+  // client: { name, rel, address, phone, email } (payer is the older name for it).
+  async addPatient({ name, dob, address, email, phone, notes, same, client, payer }) {
+    const c = client || payer || {};
+    const was = await this.$("[role=tab][aria-selected=true]").getAttribute("id");
+    await this.openPatients();
     await this.$("#addPatient").click();
+    if (same) await this.$("#pcSame").check();
+    if (c.name) await this.$("#pcClientName").fill(c.name);
+    if (c.rel) await this.$("#pcClientRel").fill(c.rel);
+    if (c.address) await this.$("#pcClientAddress").fill(c.address);
+    if (c.phone) await this.$("#pcClientPhone").fill(c.phone);
+    if (c.email) await this.$("#pcClientEmail").fill(c.email);
     await this.$("#pcName").fill(name);
     if (dob) await this.$("#pcDob").fill(dob);
     if (address) await this.$("#pcAddress").fill(address);
-    if (email) await this.$("#pcEmail").fill(email);
     if (phone) await this.$("#pcPhone").fill(phone);
-    if (same) await this.$("#pcSame").check();
-    if (payer.name) await this.$("#pcPayerName").fill(payer.name);
-    if (payer.rel) await this.$("#pcPayerRel").fill(payer.rel);
-    if (payer.address) await this.$("#pcPayerAddress").fill(payer.address);
-    if (payer.email) await this.$("#pcPayerEmail").fill(payer.email);
-    if (payer.phone) await this.$("#pcPayerPhone").fill(payer.phone);
+    if (email) await this.$("#pcEmail").fill(email);
     if (notes) await this.$("#pcNotes").fill(notes);
     await this.$("#pcSave").click();
+    await expect(this.$("#pcForm")).toHaveCount(0, { timeout: 5000 }).catch(() => {});   // a check may keep the form open
+    if (was && was !== "tabPeople" && (await this.$("#pcForm").count()) === 0) await this.$("#" + was).click();
   }
 
   // ---------- schedule ----------

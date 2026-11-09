@@ -11,9 +11,9 @@ async function weekWithTimeOff(app) {
 }
 
 test.describe("Schedule", () => {
-  test("caregivers get Shifts and Schedule tabs", async ({ openApp }) => {
+  test("caregivers get Shifts, Schedule and Client/Patient tabs", async ({ openApp }) => {
     const app = await openApp({ sync: false });
-    await expect(app.page.getByRole("tab")).toHaveText(["Shifts", "Schedule"]);
+    await expect(app.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Client/Patient"]);
     await app.tab("Schedule");
     await expect(app.$("#clock")).toBeHidden();
     await expect(app.$("#planList")).toContainText("Nothing scheduled this week.");

@@ -7,12 +7,16 @@
 //   Deleted shifts are kept as markers (deleted: true) so other devices learn about the delete.
 let shifts = [];
 let pcards = [];             // your patient cards: {id, person, birthDate, address, email, phone, notes, payerSame, payer..., updatedAt, deleted, dirty}
+let pclients = [];           // clients you added (the people who pay): {id, name, address, email, phone, updatedAt, deleted, dirty}
+let sharedClients = {};      // other people's clients linked to cards you can see, by id
+let patientRequests = [];    // requests to be added to a patient: yours (waiting) and ones you approve as the client
 let sharedCards = [];        // patient cards shared with me as a payer (I can edit them), each with .owner
 let memberCards = [];        // other caregivers' patient cards I was added to (I can edit them and log shifts), each with .owner
 let cardMembers = {};        // "owner|id" -> emails of the caregivers added to that card
 let cardOwnerNames = {};     // owner id -> name of the caregiver who set up a card I can see
 let sched = [];              // schedule entries: {id, kind: weekly|once|off, person, days, onDate, untilDate, startTime, endTime, note, ...}
-let view = "mine";           // "mine" (your own clock) | "plan" (your schedule) | "all" / "pplan" (payer's Shifts / Schedule) | "shared" (Caregivers tab) | "msgs" (Messages)
+let view = "mine";           // "mine" (your own clock) | "plan" (your schedule) | "all" / "pplan" (payer's Shifts / Schedule) | "shared" (Caregivers tab)
+                             // | "people" / "ppeople" (Client/Patient tab, caregiver / payer) | "msgs" (Messages)
 let planForm = null;         // the schedule entry being added or edited
 let planConfirm = null;      // schedule entry id waiting for "Delete?"
 let sharedSched = [];        // schedule entries shared with me (read only), each with .owner
@@ -62,6 +66,7 @@ const LS_COLORS = "care-hours-patient-colors";
 const LS_RANGE = "care-hours-range";
 const LS_CG_COLORS = "care-hours-caregiver-colors";
 const LS_PATIENTS = "care-hours-patients-v1";
+const LS_CLIENTS = "care-hours-clients-v1";
 const LS_PATIENTS_OPEN = "care-hours-patients-open";
 const LS_MEMBER_CARDS = "care-hours-member-cards";   // cards shared with me by other caregivers, for using the app offline
 let patientsOpen = false;     // Patients card open or collapsed (starts collapsed; remembered on this device)
@@ -95,7 +100,7 @@ const active = () => mine().filter(s => !s.end).sort((a, b) => b.start - a.start
 // Payer views ("all" = payer's Shifts, "pplan" = payer's Schedule, "shared" = Caregivers tab) follow the caregiver picker.
 const data = () => readOnly() ? sharedAll.filter(s => sharedCaregiver === "all" || s.owner === sharedCaregiver)
   : mine().filter(forMyPatient);
-const readOnly = () => view === "all" || view === "pplan" || view === "shared";
+const readOnly = () => view === "all" || view === "pplan" || view === "shared" || view === "ppeople";
 // A payer is someone with shared patients who doesn't record shifts of their own.
 const payerMode = () => !!me && sharedPatients.length > 0 && mine().length === 0 && liveSched().length === 0;
 // On the payer side, show each patient's name one way, whoever typed it.

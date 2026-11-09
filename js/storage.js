@@ -17,8 +17,14 @@ function normCard(c) {
   return { id: String(c.id), person: t(c.person).replace(/\s+/g, " ").trim(), birthDate: /^\d{4}-\d\d-\d\d$/.test(c.birthDate || "") ? c.birthDate : null,
     address: t(c.address), email: t(c.email), phone: t(c.phone), notes: t(c.notes),
     payerSame: !!c.payerSame, payerName: t(c.payerName), payerAddress: t(c.payerAddress), payerEmail: t(c.payerEmail),
-    payerPhone: t(c.payerPhone), payerRel: t(c.payerRel),
+    payerPhone: t(c.payerPhone), payerRel: t(c.payerRel), clientId: c.clientId ? String(c.clientId) : null,
     updatedAt: c.updatedAt || Date.now(), deleted: !!c.deleted, dirty: c.dirty !== false, failed: !!c.failed };
+}
+// A client: the person who pays for a patient's care (version 8).
+function normClient(c) {
+  const t = v => String(v ?? "");
+  return { id: String(c.id), name: t(c.name).replace(/\s+/g, " ").trim(), address: t(c.address), email: t(c.email).trim().toLowerCase(),
+    phone: t(c.phone).trim(), updatedAt: c.updatedAt || Date.now(), deleted: !!c.deleted, dirty: c.dirty !== false, failed: !!c.failed };
 }
 function readLS(key, ok, norm) {
   let v = [];
@@ -29,10 +35,11 @@ function readLS(key, ok, norm) {
 function loadLocal() { return readLS(LS_KEY, x => typeof x.start === "number", normShift); }
 function loadSched() { return readLS(LS_SCHED, x => ["weekly", "once", "off"].includes(x.kind) && /^\d{4}-\d\d-\d\d$/.test(x.onDate || ""), normSched); }
 function loadCards() { return readLS(LS_PATIENTS, x => typeof x.person === "string" && x.person.trim(), normCard); }
+function loadClients() { return readLS(LS_CLIENTS, x => typeof x.name === "string", normClient); }
 function saveLocal() {
   try {
     localStorage.setItem(LS_KEY, JSON.stringify(shifts)); localStorage.setItem(LS_SCHED, JSON.stringify(sched));
-    localStorage.setItem(LS_PATIENTS, JSON.stringify(pcards));
+    localStorage.setItem(LS_PATIENTS, JSON.stringify(pcards)); localStorage.setItem(LS_CLIENTS, JSON.stringify(pclients));
   } catch (e) {}
 }
 function getLS(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
@@ -58,6 +65,9 @@ function putSched(e) {
 }
 function putCard(c) {
   upsertLocal(pcards, { ...normCard(c), updatedAt: bump(c.updatedAt), dirty: true, failed: false });
+}
+function putClient(c) {
+  upsertLocal(pclients, { ...normClient(c), updatedAt: bump(c.updatedAt), dirty: true, failed: false });
 }
 function removeCard(id) {
   const c = pcards.find(x => x.id === id);
@@ -90,23 +100,37 @@ const schedFromRow = r => ({
   startTime: hhmm(r.start_time), endTime: hhmm(r.end_time), note: r.note || "",
   updatedAt: Date.parse(r.updated_at), deleted: !!r.deleted, dirty: false, failed: false,
 });
-const cardToRow = c => ({
-  owner: me.id, id: c.id, person: c.person, birth_date: c.birthDate, address: c.address, email: c.email, phone: c.phone, notes: c.notes,
-  payer_same: c.payerSame, payer_name: c.payerName, payer_address: c.payerAddress, payer_email: c.payerEmail,
-  payer_phone: c.payerPhone, payer_relationship: c.payerRel, deleted: c.deleted, updated_at: iso(c.updatedAt),
-});
+const cardToRow = c => {
+  // The client's details are also copied onto the card, so older copies of the app still show who pays.
+  const cl = typeof clientOf === "function" ? clientOf(c) : null;
+  const row = {
+    owner: me.id, id: c.id, person: c.person, birth_date: c.birthDate, address: c.address, email: c.email, phone: c.phone, notes: c.notes,
+    payer_same: c.payerSame, payer_name: cl ? cl.name : c.payerName, payer_address: cl ? cl.address : c.payerAddress,
+    payer_email: cl ? cl.email : c.payerEmail, payer_phone: cl ? cl.phone : c.payerPhone,
+    payer_relationship: c.payerRel, deleted: c.deleted, updated_at: iso(c.updatedAt),
+  };
+  if (!noTable.has("clients")) row.client_id = c.clientId || null;   // a database before version 8 has no clients
+  return row;
+};
 const cardFromRow = r => ({
   id: r.id, person: r.person || "", birthDate: r.birth_date || null, address: r.address || "", email: r.email || "", phone: r.phone || "",
   notes: r.notes || "", payerSame: !!r.payer_same, payerName: r.payer_name || "", payerAddress: r.payer_address || "",
   payerEmail: r.payer_email || "", payerPhone: r.payer_phone || "", payerRel: r.payer_relationship || "",
-  updatedAt: Date.parse(r.updated_at), deleted: !!r.deleted, dirty: false, failed: false,
+  clientId: r.client_id || null, updatedAt: Date.parse(r.updated_at), deleted: !!r.deleted, dirty: false, failed: false,
 });
+const clientToRow = c => ({ owner: me.id, id: c.id, name: c.name, address: c.address, email: c.email, phone: c.phone,
+  deleted: c.deleted, updated_at: iso(c.updatedAt) });
+const clientFromRow = r => ({ id: r.id, name: r.name || "", address: r.address || "", email: r.email || "", phone: r.phone || "",
+  updatedAt: Date.parse(r.updated_at), deleted: !!r.deleted, dirty: false, failed: false });
 const STORES = [
   { table: "shifts", get: () => shifts, set: v => { shifts = v; }, toRow, fromRow },
   { table: "schedule", get: () => sched, set: v => { sched = v; }, toRow: schedToRow, fromRow: schedFromRow },
+  // Clients go before patients, because a patient card points to its client.
+  { table: "clients", key: "id", get: () => pclients, set: v => { pclients = v; }, toRow: clientToRow, fromRow: clientFromRow,
+    onDuplicate: x => typeof relinkDuplicateClient === "function" && relinkDuplicateClient(x) },
   { table: "patients", get: () => pcards, set: v => { pcards = v; }, toRow: cardToRow, fromRow: cardFromRow },
 ];
-const allLocal = () => [...shifts, ...sched, ...pcards];
+const allLocal = () => [...shifts, ...sched, ...pclients, ...pcards];
 // A database set up with an older setup.sql has no table for this yet (patient cards need version 6).
 const missingTable = e => !!e && (e.code === "PGRST205" || e.code === "42P01" || /schema cache|does not exist/i.test(e.message || ""));
 const noTable = new Set();   // tables this database doesn't have; their records stay on this device
@@ -136,14 +160,18 @@ async function push() {
         if (!batch.length) continue;
         setSync("syncing");
         const sent = new Map(batch.map(x => [x.id, x.updatedAt]));
-        let { error } = await sb.from(st.table).upsert(batch.map(st.toRow), { onConflict: "owner,id" });
+        let { error } = await sb.from(st.table).upsert(batch.map(st.toRow), { onConflict: st.key || "owner,id" });
         if (missingTable(error)) { noTable.add(st.table); continue; }
+        // A database before version 8: patient cards have no client column yet.
+        if (error && /client_id/.test(error.message || "")) { noTable.add("clients"); pushAgain = true; continue; }
         if (error && isNetworkError(error)) throw error;
         if (error) {
           // One bad record shouldn't block the rest: try them one at a time.
           for (const x of batch) {
-            const r = await sb.from(st.table).upsert([st.toRow(x)], { onConflict: "owner,id" });
+            const r = await sb.from(st.table).upsert([st.toRow(x)], { onConflict: st.key || "owner,id" });
             if (r.error && isNetworkError(r.error)) throw r.error;
+            // The same client (email and phone) was added elsewhere in the meantime: link to that one instead.
+            if (r.error && r.error.code === "23505" && st.onDuplicate) { sent.delete(x.id); await st.onDuplicate(x); pushAgain = true; continue; }
             if (r.error) { const cur = st.get().find(y => y.id === x.id); if (cur && cur.updatedAt === x.updatedAt) cur.failed = true; sent.delete(x.id); }
           }
         }

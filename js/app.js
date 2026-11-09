@@ -19,6 +19,10 @@ function renderTabs() {
   $("msgBadge").hidden = !unread;
   $("msgBadge").textContent = unread || "";
   document.body.classList.toggle("msgview", msgs);
+  // Client/Patient, for caregivers and payers.
+  const people = view === "people" || view === "ppeople";
+  $("tabPeople").setAttribute("aria-selected", String(people));
+  document.body.classList.toggle("peopleview", people);
   const ro = readOnly(), plan = view === "plan", schedTab = plan || view === "pplan";
   $("sharedHead").hidden = !ro;
   $("clock").hidden = ro || plan;
@@ -49,6 +53,11 @@ function renderTabs() {
 }
 $("tabMine").addEventListener("click", () => { view = payerMode() ? "all" : "mine"; weekOffset = 0; closeForm(); closePlanForm(); renderAll(); if (view === "all") refreshShared(); });
 $("tabPlan").addEventListener("click", () => { view = payerMode() ? "pplan" : "plan"; weekOffset = 0; closeForm(); renderAll(); if (view === "pplan") refreshShared(); });
+$("tabPeople").addEventListener("click", () => {
+  view = payerMode() ? "ppeople" : "people"; closeForm(); closePlanForm();
+  pcUi = { ...pcUi, returnTo: null };   // the last notice stays until the next action on a card
+  renderAll(); loadCardSharing().then(renderAll);
+});
 $("tabMsgs").addEventListener("click", () => { view = "msgs"; closeForm(); closePlanForm(); renderAll(); refreshMessaging(); });
 $("tabShared").addEventListener("click", () => { view = "shared"; weekOffset = 0; closeForm(); closePlanForm(); renderAll(); refreshShared(); });
 $("ownerPick").addEventListener("change", e => { sharedCaregiver = e.target.value; renderAll(); });
@@ -94,7 +103,9 @@ setInterval(() => {
 // ================= start =================
 shifts = loadLocal();
 pcards = loadCards();
+pclients = loadClients();
 memberCards = loadMemberCardsSaved();
+sharedClients = loadSharedClientsSaved();
 patientsOpen = getLS(LS_PATIENTS_OPEN) === "1";
 syncOpen = getLS(LS_SYNC_OPEN) !== "0";
 rangeMode = ["week", "2weeks", "month"].includes(getLS(LS_RANGE)) ? getLS(LS_RANGE) : "week";   // open until you collapse it

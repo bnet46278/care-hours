@@ -10,15 +10,22 @@
 --     never change them. Shifts with no patient name are never shared.
 --   * Everyone else sees nothing.
 --
+-- Version 8 adds Client/Patient cards (see the "Version 8" part at the end of this file).
+--   * A client (the person who pays) is its own record, found by email and phone number together. Adding
+--     a client who's already in Care Hours links to that client instead of making a second one.
+--   * Each patient has one client; a client can have several patients.
+--   * Adding a patient who's already in Care Hours (same name, date of birth and phone) sends that
+--     patient's client a request. The caregiver is added only after the client approves it.
+--   * Patient cards made before version 8 get a client record from the payer details on them.
+-- If you ran version 7, run this whole file again. Nothing you already have is lost.
+--
 -- Version 7 lets several caregivers share one patient card.
 --   * Once a patient is set up, only the payer or a caregiver already on the card can add another caregiver,
 --     by email. Added caregivers can read and edit the card and log shifts for that patient.
 --   * The caregiver who set up the card, or the payer, can remove an added caregiver; an added caregiver can
 --     leave. Only the caregiver who set up the card can rename the patient or remove the card.
 --   * A payer sees the card when any of its caregivers shares that patient with them.
---   * Adding a patient whose name, date of birth and phone number all match a card already in Care Hours
---     isn't allowed; the app asks the caregiver to have the payer or a caregiver on that card add them
---     (patient_exists). Nobody joins a card on their own.
+--   * Nobody joins a card on their own (see version 8 for adding a patient who's already in Care Hours).
 -- If you ran version 6, run this whole file again. Nothing you already have is changed.
 --
 -- Version 6 adds patient cards: name, date of birth, address, email, phone, notes, and who pays.
@@ -293,20 +300,6 @@ $$;
 -- Earlier drafts let a matching patient join a card on its own; that's gone.
 drop function if exists public.join_matching_patient(text, date, text);
 
--- Is this patient already in Care Hours on another caregiver's card? True when the name, date of birth
--- and phone number all match. All three must be given. It only says yes or no; it never shows the card.
-create or replace function public.patient_exists(the_person text, the_birth date, the_phone text) returns boolean
-language sql stable security definer set search_path = public
-as $$
-  select auth.uid() is not null and the_birth is not null and coalesce(btrim(the_phone), '') <> ''
-    and public.same_person(the_person) <> '' and exists (
-      select 1 from public.patients p
-      where not p.deleted and p.owner <> auth.uid()
-        and public.same_person(p.person) = public.same_person(the_person)
-        and p.birth_date = the_birth and p.phone = btrim(the_phone)
-    )
-$$;
-
 -- The payer of a card: someone a caregiver on the card shares that patient with.
 create or replace function public.is_card_payer(the_owner uuid, the_id text) returns boolean
 language sql stable security definer set search_path = public
@@ -494,6 +487,214 @@ revoke execute on function public.shift_released(uuid, timestamptz) from anon, p
 revoke all on public.patient_members from anon;
 grant select, insert, delete on public.patient_members to authenticated;
 grant execute on function public.is_patient_member(uuid, text), public.can_view_patient(uuid, text, text), public.patient_card_owners(),
-  public.patient_exists(text, date, text), public.is_card_payer(uuid, text), public.can_add_card_caregiver(uuid, text) to authenticated;
+  public.is_card_payer(uuid, text), public.can_add_card_caregiver(uuid, text) to authenticated;
 revoke execute on function public.is_patient_member(uuid, text), public.can_view_patient(uuid, text, text), public.patient_card_owners(),
-  public.patient_exists(text, date, text), public.is_card_payer(uuid, text), public.can_add_card_caregiver(uuid, text) from anon, public;
+  public.is_card_payer(uuid, text), public.can_add_card_caregiver(uuid, text) from anon, public;
+
+-- ======================================================================================
+-- Version 8: Client/Patient cards
+-- ======================================================================================
+
+-- A client: the person who pays for a patient's care. Found by email and phone together, so the same
+-- client is never added twice (the unique index below).
+create table if not exists public.clients (
+  owner       uuid        not null default auth.uid() references auth.users (id) on delete cascade,
+  id          text        primary key,
+  name        text        not null default '' check (char_length(name) <= 100),
+  address     text        not null default '' check (char_length(address) <= 500),
+  email       text        not null default '' check (email = lower(btrim(email)) and char_length(email) <= 200),
+  phone       text        not null default '' check (char_length(phone) <= 30),
+  deleted     boolean     not null default false,
+  updated_at  timestamptz not null default now()
+);
+create unique index if not exists clients_email_phone_key on public.clients (email, phone)
+  where email <> '' and phone <> '' and not deleted;
+
+-- Each patient card points to its client. (The relationship to the patient stays on the patient card.)
+alter table public.patients add column if not exists client_id text references public.clients (id) on delete set null;
+
+-- Requests to be added to a patient who's already in Care Hours; the patient's client approves them.
+create table if not exists public.patient_requests (
+  owner            uuid        not null,
+  id               text        not null,
+  requester        uuid        not null default auth.uid() references auth.users (id) on delete cascade,
+  requester_email  text        not null default '',
+  requester_name   text        not null default '',
+  person           text        not null default '',
+  created_at       timestamptz not null default now(),
+  primary key (owner, id, requester),
+  foreign key (owner, id) references public.patients (owner, id) on delete cascade
+);
+create index if not exists patient_requests_requester_idx on public.patient_requests (requester);
+
+-- True when the signed-in person is the client of this patient card (their email is the client's).
+create or replace function public.is_card_client(the_owner uuid, the_id text) returns boolean
+language sql stable security definer set search_path = public
+as $$
+  select public.my_email() <> '' and exists (
+    select 1 from public.patients p join public.clients c on c.id = p.client_id
+    where p.owner = the_owner and p.id = the_id and not p.deleted and not c.deleted and c.email = public.my_email()
+  )
+$$;
+
+-- The client of a card, a caregiver on it and its payer can add caregivers (now including the client).
+create or replace function public.can_add_card_caregiver(the_owner uuid, the_id text) returns boolean
+language sql stable security definer set search_path = public
+as $$
+  select the_owner = auth.uid() or public.is_patient_member(the_owner, the_id)
+      or public.is_card_payer(the_owner, the_id) or public.is_card_client(the_owner, the_id)
+$$;
+
+-- Who can see and edit a client: the caregiver who added it, the client themselves, and everyone who
+-- can see a patient card linked to it (its caregivers and payers).
+create or replace function public.can_see_client(the_id text) returns boolean
+language sql stable security definer set search_path = public
+as $$
+  select exists (
+      select 1 from public.clients c
+      where c.id = the_id and (c.owner = auth.uid() or (public.my_email() <> '' and c.email = public.my_email()))
+    ) or exists (
+      select 1 from public.patients p
+      where p.client_id = the_id and not p.deleted
+        and (p.owner = auth.uid() or public.is_patient_member(p.owner, p.id) or public.can_view_patient(p.owner, p.id, p.person))
+    )
+$$;
+
+-- Only the caregiver who added a client can remove it.
+create or replace function public.guard_client_edit() returns trigger
+language plpgsql set search_path = public
+as $$
+begin
+  if auth.uid() is not null and auth.uid() <> old.owner and (new.owner <> old.owner or new.id <> old.id or new.deleted <> old.deleted) then
+    raise exception 'Only the caregiver who added a client can remove it' using errcode = '42501';
+  end if;
+  return new;
+end
+$$;
+drop trigger if exists guard_client_edit on public.clients;
+create trigger guard_client_edit before update on public.clients
+  for each row execute function public.guard_client_edit();
+
+-- Is this client already in Care Hours? Matches email and phone together; both must be given.
+-- Returns that client, so a new patient can be linked to it instead of adding the client again.
+create or replace function public.find_client(the_email text, the_phone text)
+returns table (id text, name text, address text, email text, phone text)
+language sql stable security definer set search_path = public
+as $$
+  select c.id, c.name, c.address, c.email, c.phone from public.clients c
+  where auth.uid() is not null and lower(btrim(the_email)) <> '' and btrim(the_phone) <> ''
+    and not c.deleted and c.email = lower(btrim(the_email)) and c.phone = btrim(the_phone)
+  limit 1
+$$;
+
+-- Adding a patient who's already in Care Hours (name, date of birth and phone all match another
+-- caregiver's card): send that patient's client a request instead of adding the patient again.
+-- Answers 'requested', 'already' (already on the card or already asked) or 'none' (no match).
+create or replace function public.request_patient(the_person text, the_birth date, the_phone text) returns text
+language plpgsql volatile security definer set search_path = public
+as $$
+declare hit record; nm text;
+begin
+  if auth.uid() is null or public.my_email() = '' or the_birth is null
+     or coalesce(btrim(the_phone), '') = '' or public.same_person(the_person) = '' then
+    return 'none';
+  end if;
+  select p.owner, p.id into hit from public.patients p
+  where not p.deleted and p.owner <> auth.uid()
+    and public.same_person(p.person) = public.same_person(the_person)
+    and p.birth_date = the_birth and p.phone = btrim(the_phone)
+  order by p.updated_at, p.owner, p.id limit 1;
+  if not found then return 'none'; end if;
+  if public.is_patient_member(hit.owner, hit.id)
+     or exists (select 1 from public.patient_requests r where r.owner = hit.owner and r.id = hit.id and r.requester = auth.uid()) then
+    return 'already';
+  end if;
+  select coalesce(nullif(display_name, ''), '') into nm from public.profiles where profiles.id = auth.uid();
+  insert into public.patient_requests (owner, id, requester, requester_email, requester_name, person)
+    values (hit.owner, hit.id, auth.uid(), public.my_email(), coalesce(nm, ''), btrim(the_person));
+  return 'requested';
+end
+$$;
+
+-- The patient's client approves a request: the caregiver is added to the card.
+create or replace function public.approve_patient_request(the_owner uuid, the_id text, the_requester uuid) returns boolean
+language plpgsql volatile security definer set search_path = public
+as $$
+declare em text;
+begin
+  if not public.is_card_client(the_owner, the_id) then
+    raise exception 'Only the patient''s client can approve this' using errcode = '42501';
+  end if;
+  select r.requester_email into em from public.patient_requests r
+  where r.owner = the_owner and r.id = the_id and r.requester = the_requester;
+  if em is null then return false; end if;
+  insert into public.patient_members (owner, id, member_email) values (the_owner, the_id, em) on conflict do nothing;
+  delete from public.patient_requests where owner = the_owner and id = the_id and requester = the_requester;
+  return true;
+end
+$$;
+
+-- Clients: seen and edited by the people above; added by caregivers as themselves; never deleted outright.
+alter table public.clients enable row level security;
+drop policy if exists "people on the card see the client" on public.clients;
+create policy "people on the card see the client" on public.clients
+  for select to authenticated using (public.can_see_client(id));
+drop policy if exists "caregivers add clients" on public.clients;
+create policy "caregivers add clients" on public.clients
+  for insert to authenticated with check (owner = auth.uid());
+drop policy if exists "people on the card edit the client" on public.clients;
+create policy "people on the card edit the client" on public.clients
+  for update to authenticated using (public.can_see_client(id)) with check (public.can_see_client(id));
+
+-- Requests: the caregiver who asked sees their own (and can cancel); the patient's client sees them
+-- (and declines by removing one, or approves with approve_patient_request). Made only by request_patient.
+alter table public.patient_requests enable row level security;
+drop policy if exists "requests seen by the asker and the client" on public.patient_requests;
+create policy "requests seen by the asker and the client" on public.patient_requests
+  for select to authenticated using (requester = auth.uid() or public.is_card_client(owner, id));
+drop policy if exists "requests removed by the asker or the client" on public.patient_requests;
+create policy "requests removed by the asker or the client" on public.patient_requests
+  for delete to authenticated using (requester = auth.uid() or public.is_card_client(owner, id));
+
+-- Clients of the patients shared with a payer can also see those patient cards.
+drop policy if exists "clients read their patients" on public.patients;
+create policy "clients read their patients" on public.patients
+  for select to authenticated using (public.is_card_client(owner, id));
+drop policy if exists "clients edit their patients" on public.patients;
+create policy "clients edit their patients" on public.patients
+  for update to authenticated using (public.is_card_client(owner, id)) with check (public.is_card_client(owner, id));
+
+-- Patient cards from before version 8: make a client record from the payer details on each card
+-- (reusing a client with the same email and phone). Runs once per card; safe to run again.
+do $$
+declare p record; em text; ph text; nm text; ad text; cid text;
+begin
+  for p in select * from public.patients where client_id is null and not deleted
+             and (payer_same or payer_name <> '' or payer_email <> '' or payer_phone <> '') loop
+    em := lower(btrim(case when p.payer_same then p.email else p.payer_email end));
+    ph := btrim(case when p.payer_same then p.phone else p.payer_phone end);
+    nm := case when p.payer_same then p.person else p.payer_name end;
+    ad := case when p.payer_same then p.address else p.payer_address end;
+    cid := null;
+    if em <> '' and ph <> '' then
+      select c.id into cid from public.clients c where c.email = em and c.phone = ph and not c.deleted;
+    end if;
+    if cid is null then
+      cid := 'c-' || md5(p.owner::text || '|' || p.id);
+      insert into public.clients (owner, id, name, address, email, phone) values (p.owner, cid, nm, ad, em, ph)
+        on conflict (id) do nothing;
+    end if;
+    update public.patients set client_id = cid, updated_at = now() where owner = p.owner and id = p.id;
+  end loop;
+end $$;
+
+-- An earlier draft's check is replaced by request_patient.
+drop function if exists public.patient_exists(text, date, text);
+
+revoke all on public.clients, public.patient_requests from anon;
+grant select, insert, update on public.clients to authenticated;
+grant select, delete on public.patient_requests to authenticated;
+grant execute on function public.is_card_client(uuid, text), public.can_see_client(text), public.find_client(text, text),
+  public.request_patient(text, date, text), public.approve_patient_request(uuid, text, uuid) to authenticated;
+revoke execute on function public.is_card_client(uuid, text), public.can_see_client(text), public.find_client(text, text),
+  public.request_patient(text, date, text), public.approve_patient_request(uuid, text, uuid) from anon, public;

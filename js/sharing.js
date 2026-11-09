@@ -92,6 +92,7 @@ function onSignedOut() {
   holdUi = { confirm: null, busy: false, err: "" };
   me = null; nameSavedNow = null; shares = []; profile = { display_name: "" }; sharedPairs = []; sharedPatients = []; sharedAll = []; sharedSched = []; sharedCaregiver = "all"; caregiverNames = {}; view = "mine";
   memberCards = []; sharedCards = []; cardMembers = {}; cardOwnerNames = {}; setLS(LS_MEMBER_CARDS, null);
+  sharedClients = {}; patientRequests = [];
   pcUi = { ...pcUi, open: null, edit: false, isNew: false };
   setSync("off"); renderAll();
 }
@@ -410,7 +411,7 @@ async function signOut() {
   signoutConfirm = false;
   await sb.auth.signOut().catch(() => {});
   // The shifts stay safe in the online account; remove them from this device.
-  shifts = []; sched = []; pcards = [];
+  shifts = []; sched = []; pcards = []; pclients = [];
   setLS(LS_OWNER, null); saveLocal();
   onSignedOut();
   renderSync();
