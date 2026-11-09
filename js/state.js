@@ -16,7 +16,7 @@ let cardMembers = {};        // "owner|id" -> emails of the caregivers added to 
 let cardOwnerNames = {};     // owner id -> name of the caregiver who set up a card I can see
 let sched = [];              // schedule entries: {id, kind: weekly|once|off, person, days, onDate, untilDate, startTime, endTime, note, ...}
 let view = "mine";           // "mine" (your own clock) | "plan" (your schedule) | "all" / "pplan" (payer's Shifts / Schedule) | "shared" (Caregivers tab)
-                             // | "people" / "ppeople" (Client/Patient tab, caregiver / payer) | "msgs" (Messages)
+                             // | "people" / "ppeople" (Patients tab for caregivers / Caregivers tab for payers) | "msgs" (Messages)
 let planForm = null;         // the schedule entry being added or edited
 let planConfirm = null;      // schedule entry id waiting for "Delete?"
 let sharedSched = [];        // schedule entries shared with me (read only), each with .owner

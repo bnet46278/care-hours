@@ -19,9 +19,10 @@ function renderTabs() {
   $("msgBadge").hidden = !unread;
   $("msgBadge").textContent = unread || "";
   document.body.classList.toggle("msgview", msgs);
-  // Client/Patient, for caregivers and payers.
+  // Patients, for caregivers; Caregivers, for payers.
   const people = view === "people" || view === "ppeople";
   $("tabPeople").setAttribute("aria-selected", String(people));
+  $("tabPeople").textContent = tabPeopleLabel();   // Patients for caregivers, Caregivers for payers
   document.body.classList.toggle("peopleview", people);
   const ro = readOnly(), plan = view === "plan", schedTab = plan || view === "pplan";
   $("sharedHead").hidden = !ro;

@@ -1,4 +1,4 @@
-// Care Hours: the Client/Patient tab (Client Details and Patient Details for each patient) and the patient pickers.
+// Care Hours: the Patients tab (Caregivers, for payers; Client Details and Patient Details for each patient) and the patient pickers.
 // All app files share one set of names (classic scripts), and load in the order listed in index.html.
 //
 // Caregivers keep a card for each patient. Patients are always picked from this list (clocking in, adding a
@@ -106,7 +106,7 @@ document.addEventListener("click", e => {
   newCard(b.dataset.addPatient);
 });
 
-// ---------- the Client/Patient tab ----------
+// ---------- the Patients tab (caregivers) ----------
 // The tab shows the cards. "+ New patient" next to a picker on another tab opens just the form there.
 const peopleTab = () => view === "people" || view === "ppeople";
 function patientsCardShown() { return peopleTab() || (pcUi.isNew && !!pcUi.returnTo); }
@@ -124,13 +124,14 @@ function renderPatients() {
     wireForm();
     return;
   }
+  if (ro) { renderCaregivers(el); return; }   // payers: a list of their caregivers instead
   // Caregivers also see the cards of patients they're the client or payer of.
   const cards = ro ? sharedCardsShown()
     : [...liveCards(), ...memberCards, ...sharedCards].sort((a, b) => a.person.localeCompare(b.person) || (isMine(a) ? -1 : isMine(b) ? 1 : 0));
   const missing = ro ? sharedWithoutCards() : [];
   el.innerHTML = `
     <div class="loghead">
-      <h2>Client/Patient</h2>
+      <h2>Patients</h2>
       ${ro ? "" : `<div class="tools"><button class="ghost" id="addPatient">+ Add patient</button></div>`}
     </div>
     <div id="patientsBody">
@@ -143,6 +144,10 @@ function renderPatients() {
       ${ro ? `<p class="hint">You can view and edit these cards. The caregivers see your changes.</p>` : ""}
     </div>`;
   if ($("addPatient")) $("addPatient").addEventListener("click", () => newCard(null));
+  wireCards(el);
+}
+// What happens when a card, a request or a caregiver on a card is tapped (both lists).
+function wireCards(el) {
   el.querySelectorAll("[data-req-approve]").forEach(b => b.addEventListener("click", () => answerRequest(b.dataset.reqApprove, true)));
   el.querySelectorAll("[data-req-decline]").forEach(b => b.addEventListener("click", () => answerRequest(b.dataset.reqDecline, false)));
   el.querySelectorAll("[data-req-cancel]").forEach(b => b.addEventListener("click", () => answerRequest(b.dataset.reqCancel, false)));
@@ -170,6 +175,52 @@ function renderPatients() {
   }));
   if ($("pcForm")) wireForm();
 }
+// ---------- payers: the Caregivers tab ----------
+// Each caregiver who shares with the payer, with their contact details and the cards of the patients they care for.
+const tabPeopleLabel = () => payerMode() ? "Caregivers" : "Patients";
+function cardsOfCaregiver(id) {
+  // One card per patient: the caregiver's own card if they set one up, otherwise any card for that patient.
+  return patientsOf(id).map(person => {
+    const same = sharedCards.filter(c => samePerson(c.person) === samePerson(person));
+    return { person, card: same.find(c => c.owner === id) || same[0] || null };
+  });
+}
+function renderCaregivers(el) {
+  const ids = sharedCaregivers();   // all of them: the caregiver picker isn't on this tab
+  const openId = ids.length === 1 ? ids[0] : pcUi.openCg;
+  const row = id => {
+    const open = id === openId, info = caregiverNames[id] || {}, contact = (typeof contactById === "function" && contactById(id)) || {};
+    const email = info.email || contact.email || "", phone = contact.phone || "";
+    const pats = cardsOfCaregiver(id);
+    const cards = pats.filter(p => p.card), noCard = pats.filter(p => !p.card);
+    return `<li class="pcard cgcard${cc(id)}${open ? " open" : ""}">
+      <button type="button" class="prow" data-cg="${esc(id)}" aria-expanded="${open}">
+        <span class="dot"></span><span class="pname"><b>${esc(cgName(id))}</b>${pats.length ? `<span class="hint">Caring for ${esc(pats.map(p => p.person).join(", "))}</span>` : ""}</span></button>
+      ${open ? `<div class="pcdetails cgdetails">
+        <h3>Caregiver Details</h3>
+        ${line("Name", cgName(id)) + line("Phone", phone, tel(phone)) + line("Email", email, mail(email))}
+        <h3>Patients</h3>
+        ${cards.length ? `<ul class="pclist">${cards.map(p => cardRow(p.card, true)).join("")}</ul>` : ""}
+        ${noCard.length ? `<p class="hint">${noCard.map(p => `${esc(cgName(id))} hasn't set up a card for ${esc(p.person)} yet.`).join(" ")}</p>` : ""}
+        ${cards.length ? `<p class="hint">Open a patient to see or edit their card. The caregivers see your changes.</p>` : ""}
+      </div>` : ""}</li>`;
+  };
+  el.innerHTML = `
+    <div class="loghead"><h2>Caregivers</h2></div>
+    <div id="patientsBody">
+      ${requestsSection()}
+      ${pcUi.notice ? `<p class="ok-msg" id="pcNotice">${esc(pcUi.notice)}</p>` : ""}
+      ${ids.length ? `<ul class="pclist">${ids.map(row).join("")}</ul>` : `<p class="empty">No caregivers share with you yet.</p>`}
+    </div>`;
+  el.querySelectorAll("[data-cg]").forEach(b => b.addEventListener("click", () => {
+    const id = b.dataset.cg;
+    pcUi = { ...pcUi, openCg: openId === id ? null : id, open: null, edit: false, confirmDel: false, err: "", notice: "",
+      memberErr: "", memberOk: "", confirmMember: null, confirmLeave: false };
+    renderPatients();
+  }));
+  wireCards(el);
+}
+
 function newCard(returnTo) {
   if (readOnly()) return;
   pcUi = { ...pcUi, open: null, edit: true, isNew: true, confirmDel: false, err: "", busy: false, returnTo: returnTo || null, notice: "" };

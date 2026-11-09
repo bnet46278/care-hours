@@ -151,18 +151,23 @@ class CareHours {
     await this.addPatient({ name });
     return name.replace(/\s+/g, " ").trim();
   }
-  // The Client/Patient tab, then one patient's card (if it's closed).
+  // The Patients tab (Caregivers, for payers), then one patient's card (if it's closed).
   async openPatients() {
     if ((await this.$("#tabPeople").getAttribute("aria-selected")) !== "true") await this.$("#tabPeople").click();
     await expect(this.$("#patientsBody")).toBeVisible();
   }
-  async openCard(name) {
+  // Payers see their caregivers first: open the caregiver (or the one caring for that patient), then the card.
+  async openCard(name, caregiver) {
     await this.openPatients();
-    const b = this.$(".pcard").filter({ hasText: name }).locator(".prow");
+    if (await this.$(".cgcard").count()) {
+      const cg = this.$(".cgcard").filter({ hasText: caregiver || name }).first().locator(":scope > .prow");
+      if ((await cg.getAttribute("aria-expanded")) !== "true") await cg.click();
+    }
+    const b = this.$(".pcard:not(.cgcard)").filter({ hasText: name }).first().locator(".prow");
     if ((await b.getAttribute("aria-expanded")) !== "true") await b.click();
     await expect(this.$("#pcDetails")).toBeVisible();
   }
-  // Adds a patient on the Client/Patient tab, then goes back to the tab you were on.
+  // Adds a patient on the Patients tab, then goes back to the tab you were on.
   // client: { name, rel, address, phone, email } (payer is the older name for it).
   async addPatient({ name, dob, address, email, phone, notes, same, client, payer }) {
     const c = client || payer || {};

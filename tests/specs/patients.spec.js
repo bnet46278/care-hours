@@ -1,4 +1,4 @@
-// The Client/Patient tab: Client Details and Patient Details, picking patients from the list, clients as their
+// The Patients tab (Caregivers, for payers): Client Details and Patient Details, picking patients from the list, clients as their
 // own records, requests to be added to a patient who's already in Care Hours, and several caregivers on one card.
 // "Today" is Wednesday, Nov 4, 2026.
 const { test, expect } = require("../support/fixtures");
@@ -11,10 +11,10 @@ const MOM = {
 const row = (app, name) => app.$(".pcard").filter({ hasText: name });
 const lineIn = (section, label) => section.locator(".pcline").filter({ hasText: label });
 
-test.describe("Client/Patient tab", () => {
+test.describe("Patients tab", () => {
   test("a caregiver sets up a client and patient, with notes", async ({ openApp }) => {
     const app = await openApp({ sync: false });
-    await expect(app.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Client/Patient"]);
+    await expect(app.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Patients"]);
     await app.openPatients();
     await expect(app.$("#weekCard")).toBeHidden();   // the tab shows only the cards
     await expect(app.$("#clock")).toBeHidden();
@@ -186,7 +186,7 @@ test.describe("Picking patients", () => {
   });
 });
 
-test.describe("Client/Patient online", () => {
+test.describe("Patients online", () => {
   async function cyndaWithMom(openApp) {
     const cynda = await openApp();
     await cynda.signIn("cynda@example.com");
@@ -235,10 +235,12 @@ test.describe("Client/Patient online", () => {
     const pat = await openApp();
     await pat.signIn("pat@example.com");
     await expect(pat.weekTotal()).toHaveText("3h 00m");
-    await expect(pat.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Client/Patient", "Messages"]);
+    // A client who pays (and logs no shifts) sees their caregivers, with each one's patients inside.
+    await expect(pat.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Caregivers", "Messages"]);
     await pat.openPatients();
+    await expect(pat.$("#patientsCard h2").first()).toHaveText("Caregivers");
     await expect(pat.$("#addPatient")).toHaveCount(0);   // clients don't add patients
-    await expect(row(pat, "Mom")).toContainText("Cynda B.'s card");
+    await expect(pat.$(".pcard:not(.cgcard)").filter({ hasText: "Mom" })).toContainText("Cynda B.'s card");
     await pat.openCard("Mom");
     await expect(pat.$("#pcDetails")).toContainText("Door code 4321");
     await expect(pat.page.getByRole("button", { name: "Remove patient" })).toHaveCount(0);
@@ -258,6 +260,42 @@ test.describe("Client/Patient online", () => {
     await cynda.openCard("Mom");
     await expect(cynda.$("#pcDetails")).toContainText("Door code changed to 9876.");
     await expect(cynda.$("#pcDetails")).toContainText("22 New St");
+  });
+
+  test("a payer's Caregivers tab lists each caregiver with their details and patients", async ({ openApp }) => {
+    const cynda = await cyndaWithMom(openApp);
+    await cynda.$("#dispPhone").fill("317-555-0123");
+    await cynda.$("#nameForm button").click();
+    await expect(cynda.$("#nameForm")).toContainText("Saved.");
+    const ann = await openApp();
+    await ann.signIn("ann@example.com");
+    await ann.setName("Ann L.");
+    await ann.addPatient({ name: "Dad", dob: "1940-05-06", client: { name: "Pat P.", rel: "Son", email: "pat@example.com", phone: "317-555-0111" } });
+    await ann.waitSynced();
+    // Caregivers see the Patients tab.
+    await expect(ann.page.getByRole("tab", { name: "Patients" })).toBeVisible();
+
+    const pat = await openApp();
+    await pat.signIn("pat@example.com");
+    await expect(pat.weekTotal()).toHaveText("3h 00m");
+    await pat.openPatients();
+    const cgs = pat.$(".cgcard");
+    await expect(cgs.locator(":scope > .prow")).toHaveText([/Ann L\.\s*Caring for Dad/, /Cynda B\.\s*Caring for Mom/]);
+    await expect(pat.$(".cgdetails")).toHaveCount(0);   // closed until tapped
+
+    const cyndaRow = cgs.filter({ hasText: "Cynda B." });
+    await cyndaRow.locator(":scope > .prow").click();
+    const details = cyndaRow.locator(".cgdetails");
+    await expect(lineIn(details, "Email")).toContainText("cynda@example.com");
+    await expect(lineIn(details, "Phone")).toContainText("317-555-0123");
+    await expect(details.locator(".pcard")).toHaveText([/Mom/]);
+    await details.locator(".pcard .prow").click();
+    await expect(pat.$("#pcDetails")).toContainText("Allergic to penicillin.");
+
+    // Opening another caregiver closes the first.
+    await cgs.filter({ hasText: "Ann L." }).locator(":scope > .prow").click();
+    await expect(pat.$(".cgdetails")).toHaveCount(1);
+    await expect(pat.$(".cgdetails .pcard")).toHaveText([/Dad/]);
   });
 
   test("the database keeps cards and clients to the people on them", async ({ openApp, db }) => {
