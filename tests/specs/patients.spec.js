@@ -236,7 +236,7 @@ test.describe("Patients online", () => {
     await pat.signIn("pat@example.com");
     await expect(pat.weekTotal()).toHaveText("3h 00m");
     // A client who pays (and logs no shifts) sees their caregivers, with each one's patients inside.
-    await expect(pat.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Caregivers", "Messages"]);
+    await expect(pat.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Caregivers"]);
     await pat.openPatients();
     await expect(pat.$("#patientsCard h2").first()).toHaveText("Caregivers");
     await expect(pat.$("#addPatient")).toHaveCount(0);   // clients don't add patients

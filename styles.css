@@ -262,17 +262,6 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
   border-radius: 10px; background: var(--live); color: #fff; font-size: 0.75rem; font-weight: 700; line-height: 1; }
 .msgs { display: flex; flex-direction: column; gap: 12px; }
 .msgs[hidden] { display: none !important; }
-.contacts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.contact { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding: 4px 0; }
-.contact:first-child { border-top: 0; }
-.contact .open { flex: 1; min-width: 0; display: flex; justify-content: space-between; gap: 10px; text-align: left;
-  background: none; border: 0; padding: 10px 2px; min-height: 44px; }
-.contact .open.off { opacity: 0.75; }
-.contact .who { display: flex; flex-direction: column; min-width: 0; }
-.contact .who b { display: inline-flex; align-items: center; gap: 6px; }
-.contact .preview { color: var(--muted); font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.contact.unread .preview { color: var(--ink); font-weight: 700; }
-.contact .when { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; color: var(--muted); font-size: 0.8rem; white-space: nowrap; }
 .textbtn { text-decoration: none; display: inline-flex; align-items: center; color: var(--accent); font-weight: 700; }
 .chathead { display: flex; flex-direction: column; gap: 4px; }
 .chathead .link { align-self: flex-start; }
@@ -286,7 +275,9 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
 .bubble .meta { font-size: 0.72rem; opacity: 0.8; margin-top: 2px; text-align: right; }
 .compose textarea { resize: vertical; min-height: 72px; }
 .sendbtns { display: inline-flex; gap: 8px; align-items: center; margin-left: auto; }
+.cgmsgs { display: flex; flex-direction: column; gap: 10px; }
 .cgmsg { display: flex; align-items: center; gap: 10px; }
+.cgmsg .who { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .cgmsg .preview { flex: 1; min-width: 0; color: var(--muted); font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cgmsg.unread .preview { color: var(--ink); font-weight: 700; }
 .cgmsg .btn .badge { margin-left: 6px; }

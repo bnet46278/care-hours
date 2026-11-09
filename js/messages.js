@@ -46,7 +46,7 @@ async function loadContacts() {
   contacts = rows.map(r => ({ id: r.id || null, email: r.email, name: r.display_name || "", phone: r.phone || "", role: r.role }))
     .sort((a, b) => contactName(a).localeCompare(contactName(b)));
   if (chatWith && !contactById(chatWith)) chatWith = null;
-  if (view === "msgs" && !msgTab()) view = payerMode() ? "all" : "mine";
+  if (view === "msgs" && !msgTab()) { chatWith = null; view = payerMode() ? "all" : "mine"; }
 }
 async function loadMessages() {
   if (!sb || !me || !msgTab()) return;
@@ -61,7 +61,7 @@ async function loadMessages() {
   renderTabs(); renderMessages();
   // A caregiver's card (payers) shows their latest message. Leave it alone while someone is typing on the tab.
   const typing = document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
-  if (view === "ppeople" && !pcUi.edit && !typing) renderPatients();
+  if (peopleTab() && !pcUi.edit && !typing) renderPatients();
 }
 async function refreshMessaging() { await loadContacts(); await loadMessages(); renderTabs(); renderMessages(); }
 
@@ -139,13 +139,13 @@ function renderMessages() {
   if (view !== "msgs" || !me) { el.hidden = true; msgRendered = null; return; }
   el.hidden = false;
   const c = chatWith && contactById(chatWith);
-  if (!c) { msgRendered = null; el.innerHTML = renderContactList(); wireContactList(el); return; }
+  if (!c) { msgRendered = null; el.hidden = true; closeChat(); return; }   // that person is gone: back to the cards
 
   // Keep the compose box (and anything being typed in it) when only the conversation changes.
   if (msgRendered !== c.id || !$("msgCompose")) {
     el.innerHTML = `
       <div class="chathead">
-        <button type="button" class="link" id="msgBack">‹ All messages</button>
+        <button type="button" class="link" id="msgBack">‹ ${esc(tabPeopleLabel())}</button>
         <div class="rowline"><h2 class="${contactColor(c).trim()}">${contactColor(c) ? '<span class="dot"></span>' : ""}${esc(contactName(c))}</h2></div>
         <p class="hint">${esc(contactRole(c))}</p>
       </div>
@@ -161,7 +161,7 @@ function renderMessages() {
           : `To text ${esc(contactName(c))} instead, they need to add their mobile number in Care Hours.`}</p>
       </form>`;
     msgRendered = c.id;
-    $("msgBack").addEventListener("click", () => { chatWith = null; renderAll(); });
+    $("msgBack").addEventListener("click", closeChat);
     $("msgCompose").addEventListener("submit", sendMessage);
     $("msgBody").addEventListener("input", e => {
       msgDraft[c.id] = e.target.value;
@@ -188,28 +188,48 @@ function renderMessages() {
   thread.scrollTop = thread.scrollHeight;
 }
 
-function renderContactList() {
-  const rows = contacts.map(c => {
-    const t = c.id ? threadWith(c.id) : [];
-    const last = t[t.length - 1];
-    const n = c.id ? unreadFrom(c.id) : 0;
-    const preview = !c.id ? "Hasn't signed in to Care Hours yet, so they can't get messages here."
-      : last ? (last.sender === me.id ? "You: " : "") + last.body : "No messages yet";
-    const main = `<span class="who"><b class="${contactColor(c).trim()}">${contactColor(c) ? '<span class="dot"></span>' : ""}${esc(contactName(c))}</b>
-        <span class="hint">${esc(contactRole(c))}</span>
-        <span class="preview">${esc(preview)}</span></span>
-      <span class="when">${last ? esc(msgTime(last.created_at)) : ""}${n ? `<span class="badge" aria-label="${n} unread">${n}</span>` : ""}</span>`;
-    return `<li class="contact${n ? " unread" : ""}">
-      ${c.id ? `<button type="button" class="open" data-chat="${esc(c.id)}">${main}</button>` : `<div class="open off">${main}</div>`}
-      ${textButton(c)}</li>`;
-  }).join("");
-  return `<h2>Messages</h2>
-    ${msgUi.loadErr ? `<p class="err">${esc(msgUi.loadErr)}</p>` : ""}
-    <ul class="contacts">${rows}</ul>
-    <p class="hint">${payerMode() ? "You can message the caregivers who share with you." : "You can message the people you share a patient with."}
-      Text opens your phone's Messages app instead${contacts.some(c => c.phone) ? "" : ", once someone adds their mobile number"}.</p>`;
+// ---------- conversations on the cards ----------
+// There's no Messages tab. Caregivers see a Messages section on each patient's card, with the people who see
+// that patient; payers see one on each caregiver's card. A conversation is still one per person, wherever it's opened.
+
+// The people you can message about this patient: those you share the patient with (the client and payers),
+// and caregivers who share the patient with you.
+function patientContacts(card) {
+  const p = samePerson(card.person);
+  return contacts.filter(x => x.role === "payer"
+    ? shares.some(s => s.email === x.email && samePerson(s.person) === p)
+    : !!x.id && patientsOf(x.id).some(n => samePerson(n) === p));
 }
-// Opens the conversation with this person, from the Messages list or from a caregiver's card (payers).
+// One person's row: the last message, how many are unread, Text, and Message to open the conversation.
+function msgRow(c, withName) {
+  const name = contactName(c);
+  if (!c.id) return `<div class="cgmsg"><span class="who">${withName ? `<b>${esc(name)}</b>` : ""}
+      <span class="preview">Hasn't signed in to Care Hours yet, so they can't get messages here.</span></span>
+      <span class="sendbtns">${textButton(c)}</span></div>`;
+  const t = threadWith(c.id), last = t[t.length - 1], n = unreadFrom(c.id);
+  const preview = last ? (last.sender === me.id ? "You: " : "") + last.body : `No messages with ${name} yet.`;
+  return `<div class="cgmsg${n ? " unread" : ""}"><span class="who">${withName ? `<b>${esc(name)}</b>` : ""}
+      <span class="preview">${esc(preview)}</span></span>
+    <span class="sendbtns">${textButton(c)}<button type="button" class="btn" data-msg-open="${esc(c.id)}"
+      aria-label="${esc(n ? `Message ${name}, ${n} unread` : `Message ${name}`)}">Message${n ? ` <span class="badge">${n}</span>` : ""}</button></span>
+    </div>`;
+}
+// Payers: the conversation with this caregiver, on their card.
+function cgMessages(id) {
+  const c = msgTab() && contactById(id);
+  return c ? `<h3>Messages</h3>${msgRow(c, false)}` : "";
+}
+// Caregivers: the conversations about this patient, on their card.
+function patientMessages(card) {
+  if (!msgTab() || payerMode()) return "";
+  const people = patientContacts(card);
+  if (!people.length) return "";
+  return `<h3>Messages</h3><div class="cgmsgs">${people.map(c => msgRow(c, true)).join("")}</div>`;
+}
+function wireMessageButtons(el) {
+  el.querySelectorAll("[data-msg-open]").forEach(b => b.addEventListener("click", () => openChatWith(b.dataset.msgOpen)));
+}
+// Opens the conversation with this person. The card it was opened from stays open for coming back.
 async function openChatWith(id) {
   if (view !== "msgs") { view = "msgs"; closeForm(); closePlanForm(); }
   chatWith = id; msgUi.err = "";
@@ -217,6 +237,9 @@ async function openChatWith(id) {
   await markRead(chatWith);
   renderTabs(); renderMessages();
 }
-function wireContactList(el) {
-  el.querySelectorAll("[data-chat]").forEach(b => b.addEventListener("click", () => openChatWith(b.dataset.chat)));
+// Back to the Patients tab (caregivers) or Caregivers tab (payers).
+function closeChat() {
+  chatWith = null;
+  view = payerMode() ? "ppeople" : "people";
+  renderAll();
 }

@@ -43,7 +43,7 @@ test.describe("Sharing with payers", () => {
     await payer.signIn("payer@example.com");
 
     // Payers get Shifts, Schedule, Caregivers and Messages tabs, and no time clock.
-    await expect(payer.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Caregivers", "Messages"]);
+    await expect(payer.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Caregivers"]);
     await expect(payer.page.getByRole("tab", { name: "Shifts" })).toHaveAttribute("aria-selected", "true");
     await expect(payer.$("#clock")).toBeHidden();
     await expect(payer.$("#addBtn")).toBeHidden();

@@ -153,7 +153,8 @@ class CareHours {
   }
   // The Patients tab (Caregivers, for payers), then one patient's card (if it's closed).
   async openPatients() {
-    if ((await this.$("#tabPeople").getAttribute("aria-selected")) !== "true") await this.$("#tabPeople").click();
+    // The tab also stays selected while a conversation is open; tapping it goes back to the cards.
+    if ((await this.$("#tabPeople").getAttribute("aria-selected")) !== "true" || await this.$("#msgs").isVisible()) await this.$("#tabPeople").click();
     await expect(this.$("#patientsBody")).toBeVisible();
   }
   // Payers see their caregivers first: open the caregiver (or the one caring for that patient), then the card.

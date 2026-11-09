@@ -173,6 +173,7 @@ function wireCards(el) {
     pcUi = { ...pcUi, open: null, confirmDel: false };
     if (c) removeCard(c.id);
   }));
+  wireMessageButtons(el);
   if ($("pcForm")) wireForm();
 }
 // ---------- payers: the Caregivers tab ----------
@@ -219,22 +220,7 @@ function renderCaregivers(el) {
       memberErr: "", memberOk: "", confirmMember: null, confirmLeave: false };
     renderPatients();
   }));
-  el.querySelectorAll("[data-cg-msg]").forEach(b => b.addEventListener("click", () => openChatWith(b.dataset.cgMsg)));
   wireCards(el);
-}
-// The payer's conversation with this caregiver: the last message, how many are unread, and a button to open it.
-function cgMessages(id) {
-  if (!msgTab()) return "";
-  const c = contactById(id);
-  if (!c) return "";
-  const t = threadWith(id), last = t[t.length - 1], n = unreadFrom(id);
-  const preview = last ? (last.sender === me.id ? "You: " : "") + last.body : `No messages with ${cgName(id)} yet.`;
-  return `<h3>Messages</h3>
-    <div class="cgmsg${n ? " unread" : ""}">
-      <span class="preview">${esc(preview)}</span>
-      <span class="sendbtns">${textButton(c)}<button type="button" class="btn" data-cg-msg="${esc(id)}"
-        aria-label="${esc(n ? `Message ${cgName(id)}, ${n} unread` : `Message ${cgName(id)}`)}">Message${n ? ` <span class="badge">${n}</span>` : ""}</button></span>
-    </div>`;
 }
 
 function newCard(returnTo) {
@@ -277,6 +263,7 @@ function cardDetails(c, ro) {
     <h3>Client Details</h3>${client}
     <h3>Patient Details</h3>${patient}
     <div class="pcline"><span class="label">Notes</span>${c.notes ? `<span class="pre">${esc(c.notes)}</span>` : `<span class="hint">No notes.</span>`}</div>
+    ${patientMessages(c)}
     ${caregiversSection(c, ro)}
     <div class="formacts">
       <button type="button" class="btn" data-pc-edit="1">Edit</button>

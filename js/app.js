@@ -11,18 +11,18 @@ function renderTabs() {
   $("tabMine").setAttribute("aria-selected", String(view === "mine" || view === "all"));
   $("tabPlan").setAttribute("aria-selected", String(view === "plan" || view === "pplan"));
   $("tabShared").setAttribute("aria-selected", String(view === "shared"));
-  // Messages, for anyone who shares with someone (or who someone shares with).
-  const msgs = view === "msgs", unread = unreadCount();
-  $("tabMsgs").hidden = !msgTab();
-  $("tabMsgs").setAttribute("aria-selected", String(msgs));
-  $("tabMsgs").setAttribute("aria-label", unread ? `Messages, ${unread} unread` : "Messages");
-  $("msgBadge").hidden = !unread;
-  $("msgBadge").textContent = unread || "";
+  // There's no Messages tab: conversations open from a card on the Patients tab (caregivers, by patient) or the
+  // Caregivers tab (payers, by caregiver). That tab stays selected while a conversation is open, and shows the unread count.
+  const msgs = view === "msgs", peopleUnread = unreadCount();
   document.body.classList.toggle("msgview", msgs);
   // Patients, for caregivers; Caregivers, for payers.
-  const people = view === "people" || view === "ppeople";
-  $("tabPeople").setAttribute("aria-selected", String(people));
-  $("tabPeople").textContent = tabPeopleLabel();   // Patients for caregivers, Caregivers for payers
+  const people = view === "people" || view === "ppeople", peopleSel = people || msgs;
+  const label = tabPeopleLabel();
+  $("tabPeople").setAttribute("aria-selected", String(peopleSel));
+  $("tabPeopleLabel").textContent = label;   // Patients for caregivers, Caregivers for payers
+  $("tabPeople").setAttribute("aria-label", peopleUnread ? `${label}, ${peopleUnread} unread` : label);
+  $("peopleBadge").hidden = !peopleUnread;
+  $("peopleBadge").textContent = peopleUnread || "";
   document.body.classList.toggle("peopleview", people);
   const ro = readOnly(), plan = view === "plan", schedTab = plan || view === "pplan";
   $("sharedHead").hidden = !ro;
@@ -58,8 +58,8 @@ $("tabPeople").addEventListener("click", () => {
   view = payerMode() ? "ppeople" : "people"; closeForm(); closePlanForm();
   pcUi = { ...pcUi, returnTo: null };   // the last notice stays until the next action on a card
   renderAll(); loadCardSharing().then(renderAll);
+  if (me) refreshMessaging();   // the cards show who you can message, and the latest messages
 });
-$("tabMsgs").addEventListener("click", () => { view = "msgs"; closeForm(); closePlanForm(); renderAll(); refreshMessaging(); });
 $("tabShared").addEventListener("click", () => { view = "shared"; weekOffset = 0; closeForm(); closePlanForm(); renderAll(); refreshShared(); });
 $("ownerPick").addEventListener("change", e => { sharedCaregiver = e.target.value; renderAll(); });
 // ---------- collapsible Shifts and Schedule lists ----------
