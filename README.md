@@ -98,6 +98,7 @@ Version 7 lets several caregivers share one patient card, and stops a patient be
 
 Version 6 adds patient cards. Until you run it, cards are kept on each device but don't sync, and payers can't see them.
 
+
 Version 5 adds holding each week. Until you run it, turning on "Hold each week" shows a message asking for the latest setup.sql.
 
 - **Version 3 (schedule):** adds the schedule table. Run the whole file again; nothing existing is changed.
