@@ -45,8 +45,7 @@
   <div class="bycg" id="byCaregiver" hidden></div>
 
   <div class="tabs" id="tabs" role="tablist" hidden>
-    <button role="tab" id="tabMine" aria-selected="true">Shifts</button>
-    <button role="tab" id="tabPlan" aria-selected="false">Schedule</button>
+    <button role="tab" id="tabMine" aria-selected="true">Care Hours</button>
     <button role="tab" id="tabShared" aria-selected="false">Caregivers</button>
     <button role="tab" id="tabPeople" aria-selected="false"><span id="tabPeopleLabel">Patients</span><span class="badge" id="peopleBadge" hidden></span></button>
   </div>
@@ -60,6 +59,11 @@
       <button type="button" data-range="week" aria-pressed="true">Week</button>
       <button type="button" data-range="2weeks" aria-pressed="false">2 weeks</button>
       <button type="button" data-range="month" aria-pressed="false">Month</button>
+    </div>
+    <!-- What the chart (and the lists under it) show: shifts worked, the schedule, or both -->
+    <div class="showpick" role="group" aria-label="Show">
+      <label class="checkline showbox worked"><input type="checkbox" id="showShifts" checked> <span class="swatch"></span>Worked</label>
+      <label class="checkline showbox sched"><input type="checkbox" id="showSched" checked> <span class="swatch"></span>Schedule</label>
     </div>
     <div class="weekhead">
       <h2 id="weekTitle">This week</h2>
@@ -93,7 +97,7 @@
 
   <section class="log listcard" id="logSection">
     <div class="loghead">
-      <button type="button" class="collapse inline" id="listToggle" aria-expanded="true" aria-controls="list"><h2>Shifts</h2><span class="chev" aria-hidden="true"></span></button>
+      <button type="button" class="collapse inline" id="listToggle" aria-expanded="true" aria-controls="list"><h2>Worked</h2><span class="chev" aria-hidden="true"></span></button>
       <div class="tools">
         <button class="ghost" id="addBtn">+ Add a missed shift</button>
         <button class="ghost" id="csvBtn">Download week (CSV)</button>

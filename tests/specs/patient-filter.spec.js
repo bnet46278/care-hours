@@ -15,11 +15,11 @@ test.describe("Patient picker for caregivers", () => {
     const app = await openApp({ sync: false });
     await app.addShift({ date: "2026-11-02", start: "09:00", end: "12:00", patient: "Mom", note: "breakfast" });
     await app.addShift({ date: "2026-11-03", start: "13:00", end: "15:00", patient: "Dad", note: "pharmacy" });
-    await app.tab("Schedule");
+    await app.show("schedule");
     await app.addToSchedule("weekly", { patient: "Mom", days: [DAYS.mon, DAYS.wed], from: "2026-11-02", start: "09:00", end: "13:00" });
     await app.addToSchedule("once", { patient: "Dad", from: "2026-11-07", start: "08:00", end: "12:00" });
     await app.addToSchedule("off", { from: "2026-11-06", until: "2026-11-06" });
-    await app.tab("Shifts");
+    await app.show("worked");
 
     // All patients
     await expect(app.$("#myPatient option")).toHaveText(["All patients", "Dad", "Mom"]);
@@ -38,7 +38,7 @@ test.describe("Patient picker for caregivers", () => {
     expect(csv.text).toContain("Total,,,2.00,,");
 
     // The choice carries over to the Schedule tab; time off still shows.
-    await app.tab("Schedule");
+    await app.show("schedule");
     await expect(app.$("#myPatient")).toHaveValue("dad");
     await expect(app.weekTotal()).toHaveText("4h 00m");
     await expect(app.$("#planList")).toContainText("Dad · One time");

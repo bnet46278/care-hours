@@ -8,11 +8,11 @@ async function caregiverWeek(app) {
   await app.addShift({ date: "2026-11-02", start: "09:00", end: "12:00", patient: "Mom", note: "breakfast" });
   await app.addShift({ date: "2026-11-03", start: "08:00", end: "10:00", patient: "Mom", note: "meds" });
   await app.addShift({ date: "2026-11-03", start: "13:00", end: "16:00", patient: "Dad", note: "pharmacy" });
-  await app.tab("Schedule");
+  await app.show("schedule");
   await app.addToSchedule("weekly", { patient: "Mom", days: [DAYS.mon, DAYS.wed], from: "2026-11-02", start: "09:00", end: "13:00" });
   await app.addToSchedule("once", { patient: "Dad", from: "2026-11-03", start: "13:00", end: "15:00", note: "pharmacy run" });
   await app.addToSchedule("off", { from: "2026-11-06", until: "2026-11-06" });
-  await app.tab("Shifts");
+  await app.show("both");
 }
 
 async function twoCaregiversForMom(openApp) {
@@ -20,10 +20,10 @@ async function twoCaregiversForMom(openApp) {
   await cynda.signIn("cynda@example.com");
   await cynda.setName("Cynda B.");
   await cynda.addShift({ date: "2026-11-03", start: "22:00", end: "06:30", patient: "Mom", note: "overnight" });
-  await cynda.tab("Schedule");
+  await cynda.show("schedule");
   await cynda.addToSchedule("weekly", { patient: "Mom", days: [DAYS.mon, DAYS.wed], from: "2026-11-02", start: "09:00", end: "13:00" });
   await cynda.addToSchedule("off", { from: "2026-11-04", until: "2026-11-04" });
-  await cynda.tab("Shifts");
+  await cynda.show("worked");
   await cynda.share("Mom", "payer@example.com");
   const ann = await openApp();
   await ann.signIn("ann@example.com");
@@ -50,12 +50,12 @@ test.describe("Colors", () => {
     expect(await colorOf(app.$("#list .shift").filter({ hasText: "meds" }))).toBe(mom);   // same patient, same color
 
     // Chart bars and the hours box use the same colors.
-    await expect(app.$(`#bars .seg.${mom}`)).toHaveCount(2);   // Mon and Tue
-    await expect(app.$(`#bars .seg.${dad}`)).toHaveCount(1);   // Tue
+    await expect(app.$(`#bars .track.worked .seg.${mom}`)).toHaveCount(2);   // worked Mon and Tue
+    await expect(app.$(`#bars .track.worked .seg.${dad}`)).toHaveCount(1);   // worked Tue
     expect(await colorOf(app.$(".bycg-item").filter({ hasText: "Mom" }))).toBe(mom);
 
     // The schedule uses them too; time off has no patient color.
-    await app.tab("Schedule");
+    await app.show("schedule");
     expect(await colorOf(app.$("#planList .occ").filter({ hasText: "Mom · Repeats" }).first())).toBe(mom);
     expect(await colorOf(app.$("#planList .occ.off").first())).toBe("");
   });
@@ -77,7 +77,7 @@ test.describe("Colors", () => {
     expect(cynda).toMatch(/^pc\d$/);
     expect(ann).not.toBe(cynda);
     expect(await colorOf(payer.$(".bycg-item").filter({ hasText: "Cynda B." }))).toBe(cynda);
-    await payer.tab("Schedule");
+    await payer.show("schedule");
     expect(await colorOf(payer.$("#planShared .occ.off").first())).toBe(cynda);   // her time off, in her color
   });
 });

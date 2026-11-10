@@ -99,7 +99,8 @@ textarea { resize: vertical; min-height: 64px; }
 .total span { color: var(--muted); }
 .bars { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
 .day { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; }
-.track { width: 100%; height: 72px; display: flex; align-items: flex-end; background: var(--bg); border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+.tracks { width: 100%; height: 72px; display: flex; gap: 3px; }
+.track { flex: 1; min-width: 0; height: 100%; display: flex; align-items: flex-end; background: var(--bg); border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
 .fill { width: 100%; background: var(--bar); border-radius: 6px 6px 0 0; }
 .day.is-today .fill { background: var(--bar-today); }
 .day.is-today .dname { color: var(--ink); font-weight: 700; }
@@ -114,7 +115,7 @@ textarea { resize: vertical; min-height: 64px; }
 .fill.stack .seg + .seg { border-bottom: 1px solid var(--surface); }
 /* Week chart days you can tap */
 button.day { font: inherit; color: inherit; background: none; border: 0; padding: 4px 2px; border-radius: 10px; cursor: pointer; }
-button.day:hover .track { border-color: var(--accent); }
+button.day:hover { background: var(--bg); }
 button.day[aria-pressed="true"] { background: var(--surface); box-shadow: 0 0 0 2px var(--accent); }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 0.85rem; color: var(--muted); }
 .legend span { display: inline-flex; align-items: center; }
@@ -232,8 +233,9 @@ button.day[aria-pressed="true"] { background: var(--surface); box-shadow: 0 0 0 
 .bars .dow { text-align: center; font-size: 0.72rem; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
 .bars .day.blank { visibility: hidden; }
 .bars.r-2weeks, .bars.r-month { gap: 4px; }
-.bars.r-2weeks .track { height: 52px; }
-.bars.r-month .track { height: 34px; border-radius: 6px; }
+.bars.r-2weeks .tracks { height: 52px; }
+.bars.r-month .tracks { height: 34px; gap: 2px; }
+.bars.r-month .track { border-radius: 5px; }
 .bars.r-month .dname, .bars.r-2weeks .dname { font-size: 0.78rem; color: var(--ink); }
 .bars.r-month .dhrs { font-size: 0.68rem; color: var(--muted); }
 .bars.r-month button.day { padding: 2px 1px; gap: 2px; }
@@ -325,3 +327,33 @@ fieldset.rolepick .inline { gap: 18px; }
 .acctpatients { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
 .acctpatients h3 { margin: 0; }
 .acctpat .pname { flex: 1; min-width: 0; }
+
+/* Payer screens: patients get square chips, caregivers round dots */
+.dot.sq { border-radius: 3px; }
+.tag { display: inline-flex; align-items: center; white-space: nowrap; }
+.bycg-grid { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: 14px; row-gap: 2px; align-items: baseline; padding-left: 16px; }
+.bycg-grid .gh { color: var(--muted); font-size: 0.75rem; font-weight: 700; text-align: right; }
+.bycg-grid .gname { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.bycg-grid .gname b { font-weight: 600; }
+.bycg-grid .num { color: var(--ink); font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.bycg-grid .gtot { border-top: 1px solid var(--line); padding-top: 3px; margin-top: 2px; font-weight: 700; }
+
+/* Care Hours tab: shifts worked and the schedule on one chart */
+:root { --worked-edge: #16A34A; --sched-edge: #A3ABA8; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --worked-edge: #4ADE80; --sched-edge: #6B7572; } }
+:root[data-theme="dark"] { --worked-edge: #4ADE80; --sched-edge: #6B7572; }
+.showpick { display: flex; flex-wrap: wrap; gap: 6px 20px; }
+.showbox { font-weight: 600; cursor: pointer; }
+.showbox .swatch { display: inline-block; width: 16px; height: 12px; border-radius: 3px; box-sizing: border-box; }
+.showbox.worked .swatch { border: 2px solid var(--worked-edge); background: var(--p0); }
+.showbox.sched .swatch { border: 2px solid var(--sched-edge); background: color-mix(in srgb, var(--p0) 35%, var(--surface)); }
+/* Shifts worked: bold patient colors, green border. Scheduled: muted patient colors, gray border. */
+.track.worked { border: 2px solid var(--worked-edge); }
+.track.sched { border: 2px solid var(--sched-edge); }
+.track.sched .seg { background: color-mix(in srgb, var(--pc) 35%, var(--surface)); }
+.track.sched .fill.stack .seg + .seg { border-bottom-color: var(--surface); }
+.bars.duo .tracks { gap: 2px; }
+.bars.r-month.duo .track { border-width: 1.5px; }
+.dhrs .hw { font-weight: 700; }
+.dhrs .hs { color: var(--muted); margin-left: 4px; }
+.bars.r-month .dhrs .hs, .bars.r-2weeks .dhrs .hs { display: none; }

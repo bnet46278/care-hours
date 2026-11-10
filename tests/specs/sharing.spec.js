@@ -43,15 +43,15 @@ test.describe("Sharing with payers", () => {
     await payer.signIn("payer@example.com");
 
     // Payers get Shifts, Schedule, Caregivers and Messages tabs, and no time clock.
-    await expect(payer.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Caregivers"]);
-    await expect(payer.page.getByRole("tab", { name: "Shifts" })).toHaveAttribute("aria-selected", "true");
+    await expect(payer.page.getByRole("tab")).toHaveText(["Care Hours", "Caregivers"]);
+    await expect(payer.page.getByRole("tab", { name: "Care Hours" })).toHaveAttribute("aria-selected", "true");
     await expect(payer.$("#clock")).toBeHidden();
     await expect(payer.$("#addBtn")).toBeHidden();
 
     await expect(payer.weekTotal()).toHaveText("16h 30m");
     const hours = name => payer.$(".bycg-item").filter({ hasText: name });
-    await expect(hours("Ann L.")).toContainText("Worked5h 00m [5.00]");
-    await expect(hours("Cynda B.")).toContainText("Worked11h 30m [11.50]");
+    await expect(hours("Ann L.")).toContainText("Total5h 00m [5.00]");   // itemized by patient: 2 patients
+    await expect(hours("Cynda B.")).toContainText("Mom11h 30m [11.50]");   // one patient: no total of her own
     await expect(payer.shiftRows()).toHaveCount(4);
     await expect(payer.$("#list")).toContainText("Mom · by Ann L. · morning meds");
     await expect(payer.$("#list")).not.toContainText("Aunt Jo");
@@ -59,15 +59,17 @@ test.describe("Sharing with payers", () => {
     await expect(payer.$("[data-act=edit], [data-act=del]")).toHaveCount(0);
   });
 
-  test("the payer's Shifts tab shows shifts, and the Schedule tab shows the schedule", async ({ openApp }) => {
+  test("the payer's Worked box shows shifts, and the Schedule box shows the schedule", async ({ openApp }) => {
     await twoCaregivers(openApp);
     const payer = await openApp();
     await payer.signIn("payer@example.com");
     await expect(payer.weekTotal()).toHaveText("16h 30m");
+    await expect(payer.$("#planShared")).toBeVisible();   // both at first
+    await payer.show("worked");
     await expect(payer.$("#logSection")).toBeVisible();
     await expect(payer.$("#planShared")).toBeHidden();
-    await payer.tab("Schedule");
-    await expect(payer.page.getByRole("tab", { name: "Schedule" })).toHaveAttribute("aria-selected", "true");
+    await payer.show("schedule");
+    await expect(payer.page.getByRole("tab", { name: "Care Hours" })).toHaveAttribute("aria-selected", "true");
     await expect(payer.$("#planShared")).toBeVisible();
     await expect(payer.$("#logSection")).toBeHidden();
     await expect(payer.$("#weekDecimal")).toContainText("hours scheduled");
@@ -102,11 +104,11 @@ test.describe("Sharing with payers", () => {
     expect(csv.text).not.toContain("Cynda B.");
 
     // The choice carries over to the Schedule tab.
-    await payer.tab("Schedule");
+    await payer.show("schedule");
     await expect(payer.$("#ownerPick")).toHaveValue(await payer.$("#ownerPick").inputValue());
     await expect(payer.$("#ownerPick option:checked")).toHaveText("Ann L.");
 
-    await payer.tab("Shifts");
+    await payer.show("worked");
     await payer.$("#ownerPick").selectOption({ label: "Cynda B." });
     await expect(payer.weekTotal()).toHaveText("11h 30m");
     await expect(payer.$("#list")).not.toContainText("Aunt Jo");   // still only patients shared with this payer

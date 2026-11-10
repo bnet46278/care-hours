@@ -16,7 +16,7 @@ test.describe("Shifts and Schedule cards", () => {
     await app.reload();
     await expect(app.$("#list")).toBeVisible();
 
-    await app.tab("Schedule");
+    await app.show("schedule");
     await expect(app.$("#planList")).toBeHidden();
     await app.$("#planToggle").click();
     await expect(app.$("#planList")).toBeVisible();
@@ -27,14 +27,14 @@ test.describe("Shifts and Schedule cards", () => {
   test("the payer's schedule card collapses too", async ({ openApp }) => {
     const cynda = await openApp({ cardsOpen: false });
     await cynda.signIn("cynda@example.com");
-    await cynda.tab("Schedule");
+    await cynda.show("schedule");
     await cynda.$("#planToggle").click();
     await cynda.addToSchedule("weekly", { patient: "Mom", days: [DAYS.mon], from: "2026-11-02", start: "09:00", end: "13:00" });
     await cynda.share("Mom", "payer@example.com");
     await cynda.waitSynced();
     const payer = await openApp({ cardsOpen: false });
     await payer.signIn("payer@example.com");
-    await payer.tab("Schedule");
+    await payer.show("schedule");
     await expect(payer.$("#planSharedList")).toBeHidden();
     await payer.$("#planSharedToggle").click();
     await expect(payer.$("#planSharedList")).toContainText("Mom · by");
@@ -101,13 +101,14 @@ test.describe("Week / 2 weeks / Month", () => {
     await expect(app.weekTotal()).toHaveText("3h 00m");
   });
 
-  test("the choice is remembered, and the Shifts tab doesn't go past now", async ({ openApp }) => {
+  test("the choice is remembered, and worked hours alone don't go past now", async ({ openApp }) => {
     const app = await openApp({ sync: false });
+    await app.show("worked");
     await app.$('[data-range="month"]').click();
     await expect(app.$("#nextWeek")).toBeHidden();
     await app.reload();
     await expect(app.$('#rangePick [data-range="month"]')).toHaveAttribute("aria-pressed", "true");
-    await app.tab("Schedule");
+    await app.show("schedule");
     await expect(app.$("#nextWeek")).toBeVisible();   // the schedule can look ahead
     await app.$("#nextWeek").click();
     await expect(app.$("#weekTitle")).toHaveText("December 2026");
@@ -115,7 +116,7 @@ test.describe("Week / 2 weeks / Month", () => {
 
   test("the schedule list and hours box follow the period", async ({ openApp }) => {
     const app = await openApp({ sync: false });
-    await app.tab("Schedule");
+    await app.show("schedule");
     await app.addToSchedule("weekly", { patient: "Mom", days: [DAYS.mon], from: "2026-11-02", start: "09:00", end: "13:00" });
     await expect(app.weekTotal()).toHaveText("4h 00m");
     await app.$('[data-range="month"]').click();

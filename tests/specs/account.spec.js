@@ -56,7 +56,7 @@ test.describe("Account Card", () => {
     await expect(pat.$("#nameForm .err")).toHaveText("Enter your name. Your caregivers see it on your patients' cards.");
     await saveAccount(pat, { name: "Pat P.", address: "9 Elm St", phone: "317-555-0177" });
     expect(db.rows("profiles")[0]).toMatchObject({ role: "client", address: "9 Elm St" });
-    await expect(pat.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Caregivers"]);
+    await expect(pat.page.getByRole("tab")).toHaveText(["Care Hours", "Caregivers"]);
     for (const id of ["#clock", "#addBtn", "#sync"]) await expect(pat.$(id)).toBeHidden();
     await expect(pat.$("#acctPatients")).toContainText("No patients yet.");
 
@@ -147,16 +147,16 @@ test.describe("Account Card", () => {
     await cynda.waitSynced();
     const pat = await openApp();
     await pat.signIn("pat@example.com");
-    await expect(pat.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Caregivers"]);   // worked out from what's shared
+    await expect(pat.page.getByRole("tab")).toHaveText(["Care Hours", "Caregivers"]);   // worked out from what's shared
 
     await saveAccount(pat, { role: "Caregiver" });
     await expect(pat.$("#clock")).toBeVisible();
-    await expect(pat.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Caregivers", "Patients"]);
+    await expect(pat.page.getByRole("tab")).toHaveText(["Care Hours", "Caregivers", "Patients"]);
     await expect(pat.$("#sync")).toBeVisible();
 
     await saveAccount(pat, { role: "Client", name: "Pat P." });
     await expect(pat.$("#clock")).toBeHidden();
-    await expect(pat.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Caregivers"]);
+    await expect(pat.page.getByRole("tab")).toHaveText(["Care Hours", "Caregivers"]);
     await expect(pat.weekTotal()).toHaveText("3h 00m");
   });
 

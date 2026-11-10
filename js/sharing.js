@@ -50,9 +50,9 @@ async function loadSharedWithMe() {
 // Only leave a shared view that has nothing left; never move someone off the tab they chose.
 function fitView() {
   if (payerMode()) {
-    view = { mine: "all", plan: "pplan", people: "ppeople", shared: "all" }[view] || view;
+    view = { mine: "all", people: "ppeople", shared: "all" }[view] || view;
   } else if (readOnly() && !(view === "shared" && sharedPatients.length)) {
-    view = { pplan: "plan", ppeople: "people" }[view] || "mine";
+    view = { ppeople: "people" }[view] || "mine";
   }
 }
 

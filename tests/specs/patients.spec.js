@@ -14,7 +14,7 @@ const lineIn = (section, label) => section.locator(".pcline").filter({ hasText: 
 test.describe("Patients tab", () => {
   test("a caregiver sets up a client and patient, with notes", async ({ openApp }) => {
     const app = await openApp({ sync: false });
-    await expect(app.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Patients"]);
+    await expect(app.page.getByRole("tab")).toHaveText(["Care Hours", "Patients"]);
     await app.openPatients();
     await expect(app.$("#weekCard")).toBeHidden();   // the tab shows only the cards
     await expect(app.$("#clock")).toBeHidden();
@@ -111,7 +111,7 @@ test.describe("Patients tab", () => {
     await app.page.getByRole("button", { name: "Remove patient" }).click();
     await app.page.getByRole("button", { name: "Remove", exact: true }).click();
     await expect(app.$(".pcard")).toHaveCount(0);
-    await app.tab("Shifts");
+    await app.show("worked");
     await expect(app.$("#personIn option")).toHaveText(["No patients yet. Add one first."]);
     await expect(app.shiftRows()).toContainText(["Mom"]);
     await app.shiftRows().first().locator("[data-act=edit]").click();
@@ -131,7 +131,7 @@ test.describe("Picking patients", () => {
     await expect(app.$("#personIn option")).toHaveText(["Choose a patient", "Dad", "Mom"]);
     await app.$("#addBtn").click();
     await expect(app.$("#fPerson option")).toHaveText(["Choose a patient", "Dad", "Mom"]);
-    await app.tab("Schedule");
+    await app.show("schedule");
     await app.$("[data-new=once]").click();
     await expect(app.$("#pPerson option")).toHaveText(["Choose a patient", "Dad", "Mom"]);
   });
@@ -143,7 +143,7 @@ test.describe("Picking patients", () => {
     await app.$("#fStart").fill("09:00");
     await app.$("#fEnd").fill("11:00");
     await app.$('[data-add-patient="fPerson"]').click();
-    await expect(app.page.getByRole("tab", { name: "Shifts" })).toHaveAttribute("aria-selected", "true");   // still on Shifts
+    await expect(app.page.getByRole("tab", { name: "Care Hours" })).toHaveAttribute("aria-selected", "true");   // still on Shifts
     await app.$("#pcName").fill("Aunt Jo");
     await app.$("#pcSave").click();
     await expect(app.$("#pcForm")).toHaveCount(0);
@@ -236,7 +236,7 @@ test.describe("Patients online", () => {
     await pat.signIn("pat@example.com");
     await expect(pat.weekTotal()).toHaveText("3h 00m");
     // A client who pays (and logs no shifts) sees their caregivers, with each one's patients inside.
-    await expect(pat.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Caregivers"]);
+    await expect(pat.page.getByRole("tab")).toHaveText(["Care Hours", "Caregivers"]);
     await pat.openPatients();
     await expect(pat.$("#patientsCard h2").first()).toHaveText("Caregivers");
     await expect(pat.$("#addPatient")).toHaveCount(0);   // clients don't add patients
@@ -523,7 +523,7 @@ test.describe("Several caregivers on one card", () => {
     await ann.waitSynced();
     await ann.openPatients();
     await expect(row(ann, "Mom")).toContainText("Cynda B.'s card · shared with you");
-    await ann.tab("Shifts");
+    await ann.show("worked");
     await expect(ann.$("#personIn option")).toHaveText(["Choose a patient", "Mom"]);
     await ann.clockIn("Mom");
     await expect(ann.$("#clock .status")).toHaveText("On the clock · Mom");
@@ -609,7 +609,7 @@ test.describe("Several caregivers on one card", () => {
     await ann.page.getByRole("button", { name: "Remove patient" }).click();
     await ann.page.getByRole("button", { name: "Remove", exact: true }).click();
     await expect(ann.$(".pcard")).toHaveCount(1);
-    await ann.tab("Shifts");
+    await ann.show("worked");
     await expect(ann.$("#personIn option")).toHaveText(["Choose a patient", "Mom"]);
   });
 

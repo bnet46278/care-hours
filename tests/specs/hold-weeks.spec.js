@@ -34,9 +34,9 @@ test.describe("Holding each week", () => {
     expect(prof().shared_through).toBe("2026-11-02T05:00:00.000Z");   // Monday midnight in New York
 
     // The schedule isn't held.
-    await cynda.tab("Schedule");
+    await cynda.show("schedule");
     await cynda.addToSchedule("weekly", { patient: "Mom", days: [DAYS.fri], from: "2026-11-02", start: "09:00", end: "13:00" });
-    await cynda.tab("Shifts");
+    await cynda.show("worked");
     await cynda.waitSynced();
 
     // Pat sees last week, but nothing from this week yet; the schedule still shows.

@@ -3,13 +3,13 @@
 
 // ================= render: tabs & shared header =================
 function renderTabs() {
-  // Caregivers: Shifts | Schedule (| Caregivers, if someone shares hours with them).
-  // Payers: Shifts | Schedule, both showing what caregivers share with them.
+  // Caregivers: Care Hours (| Caregivers, if someone shares hours with them) | Patients.
+  // Payers: Care Hours, showing what caregivers share with them | Caregivers.
+  // Care Hours holds shifts worked and the schedule together; the Shifts and Schedule boxes pick what shows.
   const payer = payerMode(), hasShared = !!me && sharedPatients.length > 0;
   $("tabs").hidden = false;
   $("tabShared").hidden = payer || !hasShared;
   $("tabMine").setAttribute("aria-selected", String(view === "mine" || view === "all"));
-  $("tabPlan").setAttribute("aria-selected", String(view === "plan" || view === "pplan"));
   $("tabShared").setAttribute("aria-selected", String(view === "shared"));
   // There's no Messages tab: conversations open from a card on the Patients tab (caregivers, by patient) or the
   // Caregivers tab (payers, by caregiver). That tab stays selected while a conversation is open, and shows the unread count.
@@ -27,13 +27,14 @@ function renderTabs() {
   $("peopleBadge").hidden = !peopleUnread;
   $("peopleBadge").textContent = peopleUnread || "";
   document.body.classList.toggle("peopleview", people);
-  const ro = readOnly(), plan = view === "plan", schedTab = plan || view === "pplan";
+  const ro = readOnly(), home = view === "mine" || view === "all";
   $("sharedHead").hidden = !ro;
-  $("clock").hidden = ro || plan;
+  $("clock").hidden = ro;
   $("addBtn").hidden = ro;
-  $("plan").hidden = !plan;
-  $("planShared").hidden = !(view === "pplan" || view === "shared");
-  $("logSection").hidden = schedTab;
+  $("plan").hidden = !(view === "mine" && showSched);
+  $("planShared").hidden = !((view === "all" && showSched) || view === "shared");
+  $("logSection").hidden = home && !showShifts;
+  $("showShifts").checked = showShifts; $("showSched").checked = showSched;
   // Caregiver's patient picker.
   const pats = patients();
   if (myPatient !== "all" && !pats.some(p => samePerson(p) === myPatient)) myPatient = "all";
@@ -56,7 +57,19 @@ function renderTabs() {
   $("sharedUpdated").textContent = sharedErr || (sharedLoadedAt ? "Updated " + tFmt.format(new Date(sharedLoadedAt)) : "");
 }
 $("tabMine").addEventListener("click", () => { view = payerMode() ? "all" : "mine"; weekOffset = 0; closeForm(); closePlanForm(); renderAll(); if (view === "all") refreshShared(); });
-$("tabPlan").addEventListener("click", () => { view = payerMode() ? "pplan" : "plan"; weekOffset = 0; closeForm(); renderAll(); if (view === "pplan") refreshShared(); });
+// Shifts and Schedule boxes on the chart: what the Care Hours tab shows. At least one stays on.
+function setShow(which, on) {
+  if (!on && !(which === "shifts" ? showSched : showShifts)) { $(which === "shifts" ? "showShifts" : "showSched").checked = true; return; }
+  if (which === "shifts") showShifts = on; else showSched = on;
+  setLS(LS_SHOW, showShifts && showSched ? "both" : showShifts ? "shifts" : "sched");
+  if (!showShifts) closeForm();
+  if (!showSched) closePlanForm();
+  // The future has only scheduled hours: come back to this week when the schedule is hidden.
+  if (!showSched && weekOffset > maxWeekAhead()) weekOffset = 0;
+  selDay = null; renderAll();
+}
+$("showShifts").addEventListener("change", e => setShow("shifts", e.target.checked));
+$("showSched").addEventListener("change", e => setShow("sched", e.target.checked));
 $("tabPeople").addEventListener("click", () => {
   view = payerMode() ? "ppeople" : "people"; closeForm(); closePlanForm();
   pcUi = { ...pcUi, returnTo: null };   // the last notice stays until the next action on a card
@@ -113,6 +126,8 @@ sharedClients = loadSharedClientsSaved();
 patientsOpen = getLS(LS_PATIENTS_OPEN) === "1";
 syncOpen = getLS(LS_SYNC_OPEN) !== "0";
 rangeMode = ["week", "2weeks", "month"].includes(getLS(LS_RANGE)) ? getLS(LS_RANGE) : "week";   // open until you collapse it
+showShifts = getLS(LS_SHOW) !== "sched";   // both, unless one was turned off on this device
+showSched = getLS(LS_SHOW) !== "shifts";
 // The Shifts and Schedule cards start collapsed; once you open one, it stays open on this device.
 listOpen = getLS(LS_LIST_OPEN) === "1";
 schedOpen = getLS(LS_SCHED_OPEN) === "1";

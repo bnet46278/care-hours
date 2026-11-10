@@ -102,7 +102,7 @@ test.describe("Messages", () => {
     const btn = card.locator("[data-msg-open]");
     await expect(btn).toHaveAttribute("aria-label", "Message Cynda B., 1 unread");
     // The unread count is on the Caregivers tab, since there's no Messages tab.
-    await expect(pat.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Caregivers1"]);
+    await expect(pat.page.getByRole("tab")).toHaveText(["Care Hours", "Caregivers1"]);
     await expect(pat.$("#peopleBadge")).toHaveText("1");
     await expect(pat.$("#tabPeople")).toHaveAttribute("aria-label", "Caregivers, 1 unread");
 
@@ -124,8 +124,8 @@ test.describe("Messages", () => {
 
   test("there's no Messages tab; a conversation hides the hours, and the other tabs bring them back", async ({ openApp }) => {
     const { cynda, pat } = await cyndaAndPat(openApp);
-    await expect(cynda.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Patients"]);
-    await expect(pat.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Caregivers"]);
+    await expect(cynda.page.getByRole("tab")).toHaveText(["Care Hours", "Patients"]);
+    await expect(pat.page.getByRole("tab")).toHaveText(["Care Hours", "Caregivers"]);
     await openChat(cynda, "Pat P.");
     await expect(cynda.$("#msgs")).toBeVisible();
     await expect(cynda.$("#tabPeople")).toHaveAttribute("aria-selected", "true");
@@ -139,7 +139,7 @@ test.describe("Messages", () => {
     await expect(msgRowOn(cynda, "Pat P.")).toBeVisible();
 
     await openChat(cynda, "Pat P.");
-    await cynda.tab("Shifts");
+    await cynda.show("worked");
     await expect(cynda.$("#weekCard")).toBeVisible();
     await expect(cynda.$("#msgs")).toBeHidden();
   });
@@ -166,7 +166,7 @@ test.describe("Messages", () => {
     const { pat } = await cyndaAndPat(openApp);
     await openCgChat(pat, "Cynda B.");
     await pat.$("#msgBody").fill("About next week");
-    await pat.tab("Shifts");
+    await pat.show("worked");
     await openCgChat(pat, "Cynda B.");
     await expect(pat.$("#msgBody")).toHaveValue("About next week");
     await pat.$("#msgBack").click();
@@ -201,7 +201,7 @@ test.describe("Messages", () => {
     const { cynda, pat } = await cyndaAndPat(openApp);
     await cynda.openCard("Mom");
     await expect(msgRowOn(cynda, "Pat P.")).toHaveCount(1);
-    await cynda.tab("Shifts");
+    await cynda.show("worked");
     await cynda.$('[data-unshare="mom|pat@example.com"]').click();
     await cynda.$("[data-unshare-yes]").click();
     await cynda.settle();
@@ -304,7 +304,7 @@ test.describe("Before running the new setup.sql", () => {
     await noMessagesTab(cynda);
     await cynda.openCard("Mom");
     await expect(cynda.$("#pcDetails .cgmsg")).toHaveCount(0);
-    await cynda.tab("Shifts");
+    await cynda.show("worked");
     await cynda.$("#dispPhone").fill("317-555-0123");
     await cynda.$("#nameForm button").click();
     await expect(cynda.$("#nameForm .err")).toHaveText("Saving a mobile number needs the latest setup.sql. Run it in Supabase, then try again.");

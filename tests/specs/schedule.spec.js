@@ -3,7 +3,7 @@
 const { test, expect, DAYS } = require("../support/fixtures");
 
 async function weekWithTimeOff(app) {
-  await app.tab("Schedule");
+  await app.show("schedule");
   await app.addToSchedule("weekly", { patient: "Mom", days: [DAYS.mon, DAYS.wed, DAYS.fri], from: "2026-11-02", start: "09:00", end: "13:00", note: "bring lunch" });
   await app.addToSchedule("once", { patient: "Dad", from: "2026-11-07", start: "08:00", end: "12:00" });
   await app.addToSchedule("once", { patient: "mom", from: "2026-11-04", start: "21:00", end: "22:30" });
@@ -11,17 +11,19 @@ async function weekWithTimeOff(app) {
 }
 
 test.describe("Schedule", () => {
-  test("caregivers get Shifts, Schedule and Patients tabs", async ({ openApp }) => {
+  test("caregivers get one Care Hours tab, with the clock, the schedule and the shifts", async ({ openApp }) => {
     const app = await openApp({ sync: false });
-    await expect(app.page.getByRole("tab")).toHaveText(["Shifts", "Schedule", "Patients"]);
-    await app.tab("Schedule");
-    await expect(app.$("#clock")).toBeHidden();
+    await expect(app.page.getByRole("tab")).toHaveText(["Care Hours", "Patients"]);
+    for (const id of ["#clock", "#plan", "#logSection"]) await expect(app.$(id)).toBeVisible();
+    await app.show("schedule");
+    await expect(app.$("#clock")).toBeVisible();   // the clock always shows
+    await expect(app.$("#logSection")).toBeHidden();
     await expect(app.$("#planList")).toContainText("Nothing scheduled this week.");
   });
 
   test("the forms explain what's missing", async ({ openApp }) => {
     const app = await openApp({ sync: false });
-    await app.tab("Schedule");
+    await app.show("schedule");
     await app.addToSchedule("weekly", { patient: "Mom", from: "2026-11-02", start: "09:00", end: "13:00" });
     await expect(app.$("#pErr")).toHaveText("Pick at least one day of the week.");
     await app.$("#pCancel").click();
@@ -63,7 +65,7 @@ test.describe("Schedule", () => {
   test("clock in from today's schedule, and see scheduled vs worked", async ({ openApp }) => {
     const app = await openApp({ sync: false });
     await weekWithTimeOff(app);
-    await app.tab("Shifts");
+    await app.show("worked");
     await expect(app.$("#weekVs")).toHaveText("Scheduled: 13h 30m [13.50]");
     const button = app.$("[data-clockfor]");
     await expect(button).toHaveText("Clock in for Mom · 9:00 PM – 10:30 PM");   // the 9-1 shift is already over
@@ -78,9 +80,9 @@ test.describe("Schedule", () => {
     await app.$("#emailForm button").click();
     await app.$("#siCode").fill("123456");
     await app.$("#codeForm button").click();
-    await app.tab("Schedule");
+    await app.show("schedule");
     await app.settle();   // let the app finish loading everything after sign-in
-    await expect(app.page.getByRole("tab", { name: "Schedule" })).toHaveAttribute("aria-selected", "true", { timeout: 1000 });
+    await expect(app.page.getByRole("tab", { name: "Care Hours" })).toHaveAttribute("aria-selected", "true", { timeout: 1000 });
     await expect(app.$("#plan")).toBeVisible();
   });
 
@@ -93,7 +95,7 @@ test.describe("Schedule", () => {
 
     const laptop = await openApp();
     await laptop.signIn("cynda@example.com");
-    await laptop.tab("Schedule");
+    await laptop.show("schedule");
     await expect(laptop.weekTotal()).toHaveText("13h 30m");
   });
 
@@ -108,7 +110,7 @@ test.describe("Schedule", () => {
     const payer = await openApp();
     await payer.signIn("payer@example.com");
     await expect(payer.$("#byCaregiver")).toContainText("Scheduled9h 30m [9.50]");
-    await payer.tab("Schedule");                       // payers see the schedule on their Schedule tab
+    await payer.show("schedule");                       // payers see the schedule on their Schedule tab
     const plan = payer.$("#planShared");
     await expect(plan).toContainText("Scheduled this week");
     await expect(plan).toContainText("Mom · by Cynda B. · bring lunch");

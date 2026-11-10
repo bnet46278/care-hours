@@ -15,7 +15,7 @@ let memberCards = [];        // other caregivers' patient cards I was added to (
 let cardMembers = {};        // "owner|id" -> emails of the caregivers added to that card
 let cardOwnerNames = {};     // owner id -> name of the caregiver who set up a card I can see
 let sched = [];              // schedule entries: {id, kind: weekly|once|off, person, days, onDate, untilDate, startTime, endTime, note, ...}
-let view = "mine";           // "mine" (your own clock) | "plan" (your schedule) | "all" / "pplan" (payer's Shifts / Schedule) | "shared" (Caregivers tab)
+let view = "mine";           // "mine" (the Care Hours tab: your clock, shifts and schedule) | "all" (the payer's Care Hours tab) | "shared" (Caregivers tab)
                              // | "people" / "ppeople" (Patients tab for caregivers / Caregivers tab for payers) | "msgs" (Messages)
 let planForm = null;         // the schedule entry being added or edited
 let planConfirm = null;      // schedule entry id waiting for "Delete?"
@@ -41,6 +41,8 @@ let nameSavedNow = null;   // the name saved during this sign-in, if any
 let shareUi = { err: "", ok: "", confirm: null, busy: false, savedName: false, nameErr: "", person: "", email: "" };
 let signoutConfirm = false;
 let rangeMode = "week";       // the period shown: "week", "2weeks" (this week and the next) or "month"
+let showShifts = true;        // the Care Hours tab shows shifts worked (chart and list); remembered on this device
+let showSched = true;         // ...and the schedule. At least one is always on.
 let selDay = null;           // day opened from the week chart ("YYYY-MM-DD")
 let myPatient = "all";       // caregiver's patient filter on Shifts and Schedule: "all", or a patient (samePerson form)
 let syncOpen = true;
@@ -64,6 +66,7 @@ const LS_LIST_OPEN = "care-hours-list-open";
 const LS_SCHED_OPEN = "care-hours-sched-open";
 const LS_COLORS = "care-hours-patient-colors";
 const LS_RANGE = "care-hours-range";
+const LS_SHOW = "care-hours-show";   // "shifts", "sched" or "both"
 const LS_CG_COLORS = "care-hours-caregiver-colors";
 const LS_PATIENTS = "care-hours-patients-v1";
 const LS_CLIENTS = "care-hours-clients-v1";
@@ -97,10 +100,10 @@ function matchPatient(name) {
 
 const mine = () => shifts.filter(s => !s.deleted);
 const active = () => mine().filter(s => !s.end).sort((a, b) => b.start - a.start)[0];
-// Payer views ("all" = payer's Shifts, "pplan" = payer's Schedule, "shared" = Caregivers tab) follow the caregiver picker.
+// Payer views ("all" = payer's Care Hours tab, "shared" = Caregivers tab) follow the caregiver picker.
 const data = () => readOnly() ? sharedAll.filter(s => sharedCaregiver === "all" || s.owner === sharedCaregiver)
   : mine().filter(forMyPatient);
-const readOnly = () => view === "all" || view === "pplan" || view === "shared" || view === "ppeople";
+const readOnly = () => view === "all" || view === "shared" || view === "ppeople";
 // A payer is someone who picked Client on the Account Card. Someone who hasn't picked yet is a payer when they
 // have shared patients and record no shifts of their own; picking Caregiver always gives the time clock.
 const payerMode = () => !!me && (profile.role === "client" ||
@@ -146,8 +149,30 @@ const seedColors = () => {
 };
 const pc = name => { const i = patientColor(name); return i < 0 ? "" : ` pc${i}`; };   // patient color class
 const cc = id => { const i = caregiverColorOf(id); return i < 0 ? "" : ` pc${i}`; };   // caregiver color class
-// The color for one shift or schedule entry: its caregiver for payers, its patient for caregivers.
-const tint = x => readOnly() ? cc(x.owner) : pc(x.person);
+// Payer (client) screens: the caregivers and patients showing; the caregiver picker narrows both.
+const shownCaregivers = () => sharedCaregiver === "all" ? sharedCaregivers() : [sharedCaregiver];
+const shownPatients = () => sharedCaregiver === "all" ? sharedPatients : sharedPatients.filter(g => g.caregivers.includes(sharedCaregiver));
+// On payer screens caregivers are color coded when 2 or more are showing (round dots), and patients when 2 or
+// more are showing (square chips), so the two never look alike.
+const colorCgs = () => shownCaregivers().length >= 2;
+const colorPats = () => shownPatients().length >= 2;
+// Borders and the chart follow the caregiver, or the patient when one caregiver shows, caring for 2 or more.
+const byPatient = () => !colorCgs() && colorPats();
+// Payer screens: patients take the colors no caregiver uses, so a patient never looks like a caregiver.
+// Handed out alphabetically, and the same whichever caregiver is picked.
+function ppc(name) {
+  const taken = new Set(sharedCaregivers().map(caregiverColorOf));
+  const free = [...Array(PALETTE).keys()].filter(i => !taken.has(i));
+  const i = sharedPatients.map(g => g.key).sort().indexOf(samePerson(name));
+  return i < 0 || !free.length ? pc(name) : ` pc${free[i % free.length]}`;
+}
+// The color for one shift or schedule entry: its caregiver (or patient, above) for payers, its patient for caregivers.
+const tint = x => readOnly() ? (byPatient() ? ppc(patientName(x)) : cc(x.owner)) : pc(x.person);
+// Payer screens: a patient's name with its square chip, and a caregiver's name with its dot, when color coded.
+const patientTag = name => colorPats()
+  ? `<span class="tag${ppc(name)}"><span class="dot sq"></span><b>${esc(name)}</b></span>` : `<b>${esc(name)}</b>`;
+const caregiverTag = (id, before = "") => colorCgs()
+  ? `<span class="tag${cc(id)}"><span class="dot"></span>${before}${esc(cgName(id))}</span>` : `${before}${esc(cgName(id))}`;
 const colorsOn = () => !readOnly();
 
 const cgName = id => (caregiverNames[id] && caregiverNames[id].name) || "A caregiver";

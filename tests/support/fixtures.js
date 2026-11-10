@@ -108,6 +108,14 @@ class CareHours {
 
   // ---------- tabs and week ----------
   async tab(name) { await this.page.getByRole("tab", { name }).click(); }
+  // The Care Hours tab, showing "worked" (shifts worked), "schedule", or "both" (as it starts).
+  async show(what = "both") {
+    if ((await this.$("#tabMine").getAttribute("aria-selected")) !== "true" || await this.$("#msgs").isVisible()) await this.$("#tabMine").click();
+    const w = this.$("#showShifts"), s = this.$("#showSched");
+    // Turn on what's wanted first: the last box that's on can't be turned off.
+    if (what !== "schedule") await w.check(); if (what !== "worked") await s.check();
+    if (what === "schedule") await w.uncheck(); if (what === "worked") await s.uncheck();
+  }
   weekTotal() { return this.$("#weekTotal"); }
   shiftRows() { return this.$("#list .shift"); }
 
@@ -119,7 +127,7 @@ class CareHours {
   }
   async clockOut() { await this.$("#clockBtn").click(); }
   // Shifts are added on the Shifts tab.
-  async toShifts() { if (await this.$("#addBtn").isHidden()) await this.$("#tabMine").click(); }
+  async toShifts() { if (await this.$("#addBtn").isHidden()) await this.show(await this.$("#showSched").isChecked() ? "both" : "worked"); }
   async addShift({ date, start, end, patient, note = "" }) {
     const name = await this.ensurePatient(patient ?? "");
     await this.toShifts();
@@ -195,6 +203,7 @@ class CareHours {
   // ---------- schedule ----------
   async addToSchedule(kind, f) {
     const name = f.patient !== undefined ? await this.ensurePatient(f.patient) : undefined;
+    if (await this.$("#plan").isHidden()) await this.show(await this.$("#showShifts").isChecked() ? "both" : "schedule");
     await this.$(`[data-new=${kind}]`).click();
     if (name !== undefined) await this.$("#pPerson").selectOption(name);
     for (const d of f.days || []) await this.$(`#pDay${d}`).check();
