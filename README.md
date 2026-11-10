@@ -22,6 +22,8 @@ It works two ways:
 | `js/sharing.js` | Signing in, sharing patients, loading what's shared with you |
 | `js/messages.js` | Messages (opened from the patient and caregiver cards) and the Text button |
 | `js/patients.js` | The Patients tab (Caregivers, for payers) and the patient pickers |
+| `js/account.js` | The Account Card: your details, Caregiver or Client, and adding patients (Patient Details for clients, Your patients for caregivers) |
+| `supabase/functions/notify/index.ts` | The Edge Function that emails clients: invitations to set up a client account, and requests to approve a caregiver (see step 5) |
 | `js/shifts-view.js` | The Shifts screen: clock, week summary, shift list, CSV |
 | `js/schedule-view.js` | The Schedule screen and the schedule payers see |
 | `js/app.js` | Tabs, drawing the page, and starting the app (loaded last) |
@@ -56,19 +58,32 @@ The scripts are plain browser scripts with no build step. They share one set of 
 2. Under **Share a patient**, enter the patient's name and the payer's email.
 3. They open the same site and sign in with that email. Their **Shifts** tab shows only that patient's shifts, and the **Caregivers** tab lets them pick a caregiver. They can't change anything.
 
+### 5. Emails to clients (one time, about 15 minutes)
+When a caregiver adds a patient, the client (or the patient, if they're their own client) gets an email inviting them to set up a client account. When a caregiver adds a patient who's already in Care Hours, that patient's client gets an email asking them to approve it. These emails come from a small Supabase Edge Function called `notify` (`supabase/functions/notify/index.ts`). Until you set it up, everything else still works: the client sees the shifts and the request when they sign in, and the caregiver is told the email couldn't be sent.
+1. In Supabase, open **Edge Functions → Deploy a new function → Via Editor**. Name it exactly `notify`, replace the sample code with everything in `supabase/functions/notify/index.ts`, and click **Deploy**. (With the Supabase CLI instead: `supabase functions deploy notify`.)
+2. Open **Edge Functions → Secrets** and add:
+   - `SITE_URL`: your site, `https://bnet46278.github.io/care-hours/`
+   - `SMTP_HOST`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`: the same email service as in step 2.3 (for Brevo, `smtp-relay.brevo.com`; for Gmail, `smtp.gmail.com` with an app password). `SMTP_FROM` is the sender address.
+   - `SMTP_PORT`: `465`. Edge Functions can't use ports 25 or 587.
+
+   Without the SMTP secrets, invitations to new people still go out (Supabase sends those through step 2.3), but the short emails to people who already have an account, and the approval emails, are skipped.
+3. Go to **Authentication → Emails → Templates → Invite user**. Change the wording if you like (for example "You've been added as a client in Care Hours"), and add the code line from step 2.2 so they can also sign in by typing the code:
+   `<p>Your Care Hours code is: <strong>{{ .Token }}</strong></p>`
+
 ## Tabs
 
 - **Caregivers:** **Shifts** (clock in and out, log missed shifts) and **Schedule** (repeating shifts, one-time shifts, time off).
 - **Payers:** **Shifts** (every shift shared with them, from all caregivers) and **Schedule** (what's scheduled), with a picker at the top for all caregivers or one. Payers can't change anything.
 - **Messages** (both sides, once a patient is shared): there's no Messages tab. Caregivers see a **Messages** section on each patient's card (Patients tab) with the people who see that patient; payers see one on each caregiver's card (Caregivers tab). **Message** opens the conversation, one per person, wherever it's opened; **‹ Patients** or **‹ Caregivers** goes back to the card. New messages appear right away while the app is open, and the Patients or Caregivers tab shows how many are unread. Messages need a connection; one that can't be sent stays in the box. A payer who hasn't signed in to Care Hours yet is listed but can't get messages until they do.
 - **Patients tab** (next to Shifts and Schedule): a card for each patient in two parts. **Client Details** is the person who pays: name, relationship to the patient, address, phone and email. **Patient Details**: name, date of birth (the age is worked out), address, phone, email and notes. "The patient is the client" fills Client Details with the patient's own. Patients are always picked from this list (clocking in, adding a shift, the schedule, sharing); **+ New patient** next to any picker adds one right there. Clients and payers can view and edit the cards of their patients, but only a caregiver adds a patient, and only the caregiver who set up a card renames or removes it. Removing a patient keeps their logged shifts.
-- **Payers see a Caregivers tab instead:** in the same place, a payer (someone who has shifts shared with them and logs none of their own) sees a list of their caregivers. Tapping a caregiver shows their name, phone and email, and the cards of the patients they care for, which the payer can open and edit.
+- **Account Card** (once signed in): your name, address and phone, and the email you sign in with (it can't be changed there). Pick **Caregiver** or **Client**. Caregivers get the time clock and schedule. Clients get the payer side (Shifts, Schedule and Caregivers, view only) right away, even before anyone shares with them. A client's details become their client record, and they add their patients under **Patient Details** (name, date of birth, address, phone, email and notes). A caregiver who later adds one of those patients (same name, date of birth and phone) has to be approved by the client on their Caregivers tab. Caregivers see **Your patients**, with each patient's client and **Open** for the full card. **+ Add patient** asks for the Patient Details and whether the patient is also the client: if yes, the patient's email is needed; if no, the client's email. The client then gets the caregiver's shifts for that patient and an email inviting them to set up a client account (step 5). Adding a patient who's already in Care Hours (same name, date of birth and phone) doesn't make a second card: that patient's client is asked to approve the caregiver, by email and with a count on their Caregivers tab. Adding a patient on the Patients tab works the same way. Someone a caregiver added as a client, who hasn't picked yet, finds **Client** already picked and their details filled in from the client record. Someone who hasn't picked yet is otherwise treated as a payer when they have shifts shared with them and log none of their own. Sign out is on this card.
+- **Payers see a Caregivers tab instead:** in the same place, a payer (a client, or someone who has shifts shared with them and logs none of their own) sees a list of their caregivers. Tapping a caregiver shows their name, phone and email, and the cards of the patients they care for, which the payer can open and edit.
 - **Clients are their own records:** a client is found by email and phone together. Adding a client who's already in Care Hours links the patient to that client instead of adding them again, so one client can have several patients (each patient has one client).
 - **Several caregivers, one card:** the patient's client, the payer, or any caregiver already on the card adds another caregiver by email (Caregivers, on the card). Added caregivers see and edit the same card and can pick that patient when logging shifts. The caregiver who set up the card, or the payer, can remove an added caregiver; an added caregiver can leave. Payers see the card when any of its caregivers shares the patient with them.
 - **A patient who's already in Care Hours:** adding a patient whose name, date of birth and phone all match another caregiver's card doesn't make a second card. Instead the patient's client gets a request (on their Caregivers or Patients tab) and approves or declines it; the caregiver can see the patient and log shifts only after it's approved. The caregiver can cancel a request while it's waiting.
 - **The client is shared automatically:** when a caregiver adds a patient, is added to a card, or changes the client's email, the client gets the caregiver's shifts for that patient, as if shared under Sync & sharing.
 - **Hold each week** (Sync & sharing, caregivers): payers don't see the current week's worked shifts until the caregiver taps **Share this week**. Sharing can't be undone, and earlier weeks that weren't shared yet can be shared too. Shifts in a shared week can still be fixed, and payers see the fix. The schedule is never held. Turning the option off shares everything.
-- **Text button:** anyone can add a mobile number on their account card. The people they share with then get a **Text** button next to Message on the cards and in the conversation, which opens the phone's own Messages app, addressed to them.
+- **Text button:** anyone can add a mobile number on their Account Card. The people they share with then get a **Text** button next to Message on the cards and in the conversation, which opens the phone's own Messages app, addressed to them.
 - **Time off wins.** A scheduled shift during the caregiver's time off is skipped and doesn't count as scheduled. **Skip this day** on a repeating shift adds time off for just that shift. Payers see time off only as "unavailable".
 
 ## Testing
@@ -92,6 +107,8 @@ The `tests` folder has automated Playwright tests that use the app like a caregi
 If you change `setup.sql` (or pull a new version of it), run the whole file again in the Supabase SQL Editor. It's safe to run more than once.
 
 Version 4 of `setup.sql` adds messages and mobile numbers. Until you run it, the app works as before and the cards show no Messages section.
+
+Version 9 adds the Account Card's address and the Caregiver / Client choice. Until you run it, a name and phone still save, but saving an address or picking Caregiver or Client asks for the latest setup.sql.
 
 Version 8 adds Client Details to the patient cards: clients as their own records, and requests to be added to a patient who's already in Care Hours. It turns the payer details already on each card into a client record. Until you run it, cards still sync, but clients aren't shared between caregivers and requests can't be sent.
 

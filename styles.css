@@ -302,16 +302,26 @@ input.code { font-family: var(--mono); letter-spacing: 0.3em; font-size: 1.3rem;
 select { width: 100%; box-sizing: border-box; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; min-height: 44px; }
 .addpat { align-self: flex-start; margin-top: 4px; font-size: 0.9rem; }
 .pclist { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.pcard { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
-.pcard .prow { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: none; border: 0; padding: 12px; min-height: 44px; font: inherit; color: inherit; }
-.pcard .pname { display: flex; flex-direction: column; min-width: 0; }
+.pcard, .apcard { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.pcard .prow, .apcard .prow { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; background: none; border: 0; padding: 12px; min-height: 44px; font: inherit; color: inherit; }
+.pcard .pname, .apcard .pname { display: flex; flex-direction: column; min-width: 0; }
 .pcdetails { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 6px; }
 .pcdetails h3, .pcform h3 { margin: 10px 0 2px; font-size: 0.95rem; }
 .pcline { display: grid; grid-template-columns: 7.5em 1fr; gap: 8px; align-items: baseline; }
 .pcline .label { margin: 0; }
 .pre { white-space: pre-wrap; margin: 0; }
-.pcard .pcform, .pcnew .pcform { border: 0; border-top: 1px solid var(--line); border-radius: 0; }
+.pcard .pcform, .apcard .pcform, .pcnew .pcform { border: 0; border-top: 1px solid var(--line); border-radius: 0; }
 .pcnew { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; margin-top: 8px; }
 fieldset.payer { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px 12px; margin: 0; display: flex; flex-direction: column; gap: 10px; }
 fieldset.payer legend { font-weight: 700; padding: 0 4px; }
 input:disabled, textarea:disabled { opacity: 0.7; }
+
+/* Account Card */
+.account[hidden] { display: none !important; }
+.acctform { display: flex; flex-direction: column; gap: 12px; }
+fieldset.rolepick { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+fieldset.rolepick legend { padding: 0; margin-bottom: 4px; }
+fieldset.rolepick .inline { gap: 18px; }
+.acctpatients { display: flex; flex-direction: column; gap: 10px; border-top: 1px solid var(--line); padding-top: 12px; }
+.acctpatients h3 { margin: 0; }
+.acctpat .pname { flex: 1; min-width: 0; }

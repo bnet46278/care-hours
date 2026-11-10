@@ -62,6 +62,8 @@
       return ch;
     }
     async function removeChannel(ch) { ch.live = false; channels.delete(ch); return "ok"; }
-    return { auth, from, rpc, channel, removeChannel };
+    // Edge Functions (the "notify" emails): answered by the fake database, which records each email.
+    const functions = { invoke: (name, opts) => send({ op: "function", name, body: (opts && opts.body) || {} }) };
+    return { auth, from, rpc, channel, removeChannel, functions };
   } };
 })();

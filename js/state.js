@@ -101,8 +101,10 @@ const active = () => mine().filter(s => !s.end).sort((a, b) => b.start - a.start
 const data = () => readOnly() ? sharedAll.filter(s => sharedCaregiver === "all" || s.owner === sharedCaregiver)
   : mine().filter(forMyPatient);
 const readOnly = () => view === "all" || view === "pplan" || view === "shared" || view === "ppeople";
-// A payer is someone with shared patients who doesn't record shifts of their own.
-const payerMode = () => !!me && sharedPatients.length > 0 && mine().length === 0 && liveSched().length === 0;
+// A payer is someone who picked Client on the Account Card. Someone who hasn't picked yet is a payer when they
+// have shared patients and record no shifts of their own; picking Caregiver always gives the time clock.
+const payerMode = () => !!me && (profile.role === "client" ||
+  (profile.role !== "caregiver" && sharedPatients.length > 0 && mine().length === 0 && liveSched().length === 0));
 // On the payer side, show each patient's name one way, whoever typed it.
 const patientName = s => {
   if (!readOnly()) return s.person;

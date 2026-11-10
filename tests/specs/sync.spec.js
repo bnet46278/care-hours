@@ -16,7 +16,7 @@ test.describe("Sign in and sync", () => {
 
     await app.$("#siCode").fill("123456");
     await app.$("#codeForm button").click();
-    await expect(app.$("#sync")).toContainText("Signed in as cynda@example.com");
+    await expect(app.$("#account")).toContainText("Signed in as cynda@example.com");
   });
 
   test("shifts recorded before signing in are uploaded", async ({ openApp, db }) => {
@@ -72,7 +72,6 @@ test.describe("Sign in and sync", () => {
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-expanded", "false");
     await expect(app.$("#shareForm")).toBeHidden();
-    await expect(app.$("#signOut")).toBeHidden();
     await expect(app.$("#syncState")).toContainText("All shifts saved online");   // status still shows
 
     await app.reload();
@@ -87,7 +86,7 @@ test.describe("Sign in and sync", () => {
     await app.addShift({ date: "2026-11-02", start: "09:00", end: "12:00", patient: "Mom" });
     await app.waitSynced();
     await app.$("#signOut").click();
-    await expect(app.$("#sync .confirm")).toContainText("They stay safe in your online account.");
+    await expect(app.$("#account .confirm")).toContainText("They stay safe in your online account.");
     await app.$("#signOutYes").click();
     await expect(app.shiftRows()).toHaveCount(0);
     expect(db.rows("shifts")).toHaveLength(1);

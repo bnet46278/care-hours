@@ -10,6 +10,12 @@
 --     never change them. Shifts with no patient name are never shared.
 --   * Everyone else sees nothing.
 --
+-- Version 9 adds the Account Card: your address, and whether you're a caregiver or a client.
+--   * A client gets the payer side of the app even before anyone shares with them. Their details are saved as
+--     their client record, and the patients they add are linked to it, so a caregiver who adds the same
+--     patient later has to be approved by them (see version 8).
+-- If you ran version 8, run this whole file again. Nothing you already have is changed.
+--
 -- Version 8 adds Client/Patient cards (see the "Version 8" part at the end of this file).
 --   * A client (the person who pays) is its own record, found by email and phone number together. Adding
 --     a client who's already in Care Hours links to that client instead of making a second one.
@@ -95,6 +101,11 @@ create table if not exists public.profiles (
 
 -- Version 4: a mobile number, so the people you share with can text you from the app.
 alter table public.profiles add column if not exists phone text not null default '' check (char_length(phone) <= 30);
+
+-- Version 9: the Account Card. Your address, and whether you use Care Hours as a caregiver or a client
+-- ('' means you haven't picked yet, and the app works it out from what's shared with you).
+alter table public.profiles add column if not exists address text not null default '' check (char_length(address) <= 500);
+alter table public.profiles add column if not exists role text not null default '' check (role in ('', 'caregiver', 'client'));
 
 -- Version 5: hold each week until it's shared. Payers see shifts that start before shared_through.
 alter table public.profiles add column if not exists hold_weeks boolean not null default false;

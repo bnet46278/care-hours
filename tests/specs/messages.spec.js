@@ -208,7 +208,7 @@ test.describe("Messages", () => {
     await cynda.openCard("Mom");
     await expect(cynda.$("#pcDetails .cgmsg")).toHaveCount(0);
     await pat.reload();
-    await expect(pat.$("#sync")).toContainText("Signed in as");
+    await expect(pat.$("#account")).toContainText("Signed in as");
     await pat.settle();
     await expect(pat.$("[data-msg-open]")).toHaveCount(0);
   });
@@ -252,7 +252,7 @@ test.describe("Text button", () => {
     const { cynda, pat } = await cyndaAndPat(openApp);
     await cynda.$("#dispPhone").fill("555");
     await cynda.$("#nameForm button").click();
-    await expect(cynda.$("#nameForm .err")).toHaveText("Enter a mobile number with its area code, like 317-555-0123.");
+    await expect(cynda.$("#nameForm .err")).toHaveText("Enter a phone number with its area code, like 317-555-0123.");
     await cynda.$("#dispPhone").fill("(317) 555-0123");
     await cynda.$("#nameForm button").click();
     await expect(cynda.$("#nameForm")).toContainText("Saved.");

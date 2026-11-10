@@ -15,6 +15,7 @@
 //   * clients are their own records, unique by email + phone, seen and edited by the people on a linked
 //     patient card and the client themselves; adding a patient who's already in Care Hours makes a request
 //     that only the patient's client can approve (version 8)
+//   * profiles have an address and a role ('', 'caregiver' or 'client') (version 9)
 //   * signed-out visitors get nothing
 const { randomUUID } = require("crypto");
 
@@ -29,13 +30,16 @@ const UPDATE_COLS = { messages: ["read_at"] };
 
 class FakeDb {
   // now: the time the database clock starts at (each new row is a second later than the last).
-  // version: acts like a database set up with that version of setup.sql (7: no client records; 6: no shared patient cards; 5: no patient cards; 4: also no week holding; 3: also no messages or phone numbers).
-  constructor({ now = Date.now(), version = 8 } = {}) {
+  // version: acts like a database set up with that version of setup.sql (8: no address or role on profiles; 7: no client records; 6: no shared patient cards; 5: no patient cards; 4: also no week holding; 3: also no messages or phone numbers).
+  constructor({ now = Date.now(), version = 9 } = {}) {
     this.version = version;
     this.users = new Map();   // email -> id
     this.tables = { shifts: [], schedule: [], shares: [], profiles: [], messages: [], patients: [], patient_members: [], clients: [], patient_requests: [] };
     this.clock = +now;
     this.onChange = null;     // called with the table name after a write, like Supabase's live updates
+    this.emails = [];         // emails the "notify" Edge Function sent: {to, kind: "invite" | "notice" | "request", person}
+    this.functions = true;    // false: the Edge Function isn't deployed
+    this.smtp = true;         // false: the Edge Function has no email service of its own (only Supabase's invites go out)
   }
   stamp() { this.clock += 1000; return new Date(this.clock).toISOString(); }
 
@@ -145,6 +149,8 @@ class FakeDb {
     }
     if (table === "messages" && !(String(r.body || "").trim().length >= 1 && String(r.body).trim().length <= 2000)) return "a message needs 1 to 2000 characters";
     if (table === "profiles" && String(r.phone || "").length > 30) return "phone is too long";
+    if (table === "profiles" && String(r.address || "").length > 500) return "address is too long";
+    if (table === "profiles" && !["", "caregiver", "client"].includes(r.role || "")) return "role must be caregiver or client";
     if (table === "clients") {
       if (r.email !== String(r.email || "").trim().toLowerCase()) return "client email must be lowercase";
       if (r.email && r.phone && !r.deleted && this.tables.clients.some(x => x.id !== r.id && !x.deleted && x.email === r.email && x.phone === r.phone))
@@ -175,6 +181,7 @@ class FakeDb {
       return { data: { id: this.users.get(email), email }, error: null };
     }
     const me = { id: q.uid || null, email: (q.email || "").toLowerCase() };
+    if (q.op === "function") return this.notify(q, me);
     if (q.op === "rpc") {
       if (!me.id) return { data: null, error: { code: "42501", message: "permission denied" } };
       if (q.name === "patient_card_owners" && this.version >= 7) return { data: this.cardOwners(me), error: null };
@@ -222,6 +229,9 @@ class FakeDb {
       || (this.version < 8 && (q.table === "clients" || q.table === "patient_requests")) ? null : this.tables[q.table];
     if (this.version < 4 && q.table === "profiles" && (q.rows || []).some(r => "phone" in r))
       return { data: null, error: { code: "PGRST204", message: "Could not find the 'phone' column of 'profiles' in the schema cache" } };
+    for (const col of ["address", "role"])
+      if (this.version < 9 && q.table === "profiles" && (q.rows || []).some(r => col in r))
+        return { data: null, error: { code: "PGRST204", message: `Could not find the '${col}' column of 'profiles' in the schema cache` } };
     if (!table) return { data: null, error: { code: "PGRST205", message: `Could not find the table 'public.${q.table}'` } };
     if (!me.id) return { data: null, error: { code: "42501", message: `permission denied for table ${q.table}` } };
     const matches = r => (q.filters || []).every(([c, op, v]) =>
@@ -293,6 +303,30 @@ class FakeDb {
       return { data: null, error: null };
     }
     return { data: null, error: { code: "400", message: "unsupported" } };
+  }
+  // The "notify" Edge Function (supabase/functions/notify/index.ts), with the same checks.
+  notify(q, me) {
+    if (!this.functions || q.name !== "notify") return { data: null, error: { message: "Function not found" } };
+    if (!me.id) return { data: null, error: { message: "Sign in first" } };
+    const b = q.body || {};
+    if (b.action === "invite") {
+      const email = String(b.email || "").trim().toLowerCase();
+      if (!this.tables.shares.some(s => s.owner === me.id && s.viewer_email === email && samePerson(s.person) === samePerson(b.person)))
+        return { data: null, error: { message: "Not your client" } };
+      if (!this.users.has(email)) { this.emails.push({ to: email, kind: "invite", person: b.person }); return { data: { sent: "invite" }, error: null }; }
+      if (this.smtp) this.emails.push({ to: email, kind: "notice", person: b.person });
+      return { data: { sent: this.smtp ? "notice" : "none", registered: true }, error: null };
+    }
+    if (b.action === "request") {
+      const r = this.tables.patient_requests.filter(x => x.requester === me.id && samePerson(x.person) === samePerson(b.person)).pop();
+      if (!r) return { data: null, error: { message: "No request" } };
+      const p = this.tables.patients.find(x => x.owner === r.owner && x.id === r.id);
+      const c = p && p.client_id && this.tables.clients.find(x => x.id === p.client_id);
+      if (!c || !c.email || !this.smtp) return { data: { sent: "none" }, error: null };
+      this.emails.push({ to: c.email, kind: "request", person: p.person });
+      return { data: { sent: "notice" }, error: null };
+    }
+    return { data: null, error: { message: "Unknown action" } };
   }
   changed(table) { if (this.onChange) this.onChange(table); }
 }

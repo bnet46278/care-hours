@@ -86,7 +86,7 @@ class CareHours {
     await this.$("#emailForm button").click();
     await this.$("#siCode").fill(code);
     await this.$("#codeForm button").click();
-    if (code === "123456") await expect(this.$("#sync")).toContainText(/Signed in as|Your account/);
+    if (code === "123456") await expect(this.$("#account")).toContainText("Signed in as");
   }
   async setName(name) {
     await this.$("#dispName").fill(name);

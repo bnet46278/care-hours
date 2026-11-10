@@ -408,7 +408,7 @@ test.describe("Adding a patient who's already in Care Hours", () => {
     const { ann } = await cyndaAndAnn(openApp);
     await ann.addPatient({ name: " mom ", dob: "1944-03-03", phone: "(317) 555-0100", notes: "typed by Ann" });
     await ann.openPatients();
-    await expect(ann.$("#pcNotice")).toHaveText("mom is already in Care Hours, so mom's client has been asked to approve adding you. You'll see mom here once they do.");
+    await expect(ann.$("#pcNotice")).toHaveText("mom is already in Care Hours, so mom's client has been asked to approve adding you. You'll see mom here once they do. We emailed them too.");
     await expect(ann.$(".pcard")).toHaveCount(0);   // no second card, and no access yet
     expect(db.rows("patients")).toHaveLength(1);
     expect(await ann.page.evaluate(() => pcards.length)).toBe(0);

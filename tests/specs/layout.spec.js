@@ -135,8 +135,8 @@ test.describe("Page layout", () => {
     const payer = await openApp();
     await payer.signIn("payer@example.com");
     await expect(payer.$("#sharedHead")).toBeVisible();
-    const order = await payer.page.evaluate(() => [...document.querySelectorAll("#sync, #sharedHead")].map(e => e.id));
-    expect(order).toEqual(["sync", "sharedHead"]);
+    const order = await payer.page.evaluate(() => [...document.querySelectorAll("#account, #sharedHead")].map(e => e.id));
+    expect(order).toEqual(["account", "sharedHead"]);
   });
 
   test("the update notice stays hidden until a new version arrives", async ({ openApp }) => {

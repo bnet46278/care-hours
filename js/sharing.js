@@ -42,12 +42,18 @@ async function loadSharedWithMe() {
   sharedPatients = [...byPatient.values()].sort((a, b) => a.person.localeCompare(b.person));
   for (const g of sharedPatients) g.caregivers.sort((a, b) => cgName(a).localeCompare(cgName(b)));
   if (sharedCaregiver !== "all" && !sharedPairs.some(r => r.owner === sharedCaregiver)) sharedCaregiver = "all";
-  // Only leave a shared view that has nothing left; never move someone off the tab they chose.
-  if (!sharedPatients.length && readOnly()) view = "mine";
-  else if (payerMode() && view === "mine") view = "all";   // payers land on all their shared shifts
-  else if (payerMode() && view === "plan") view = "pplan";
+  fitView();
   await loadSharedShifts();
   renderAll();
+}
+// Payers (and clients) land on the payer side of the tab they're on; caregivers on their own side.
+// Only leave a shared view that has nothing left; never move someone off the tab they chose.
+function fitView() {
+  if (payerMode()) {
+    view = { mine: "all", plan: "pplan", people: "ppeople", shared: "all" }[view] || view;
+  } else if (readOnly() && !(view === "shared" && sharedPatients.length)) {
+    view = { pplan: "plan", ppeople: "people" }[view] || "mine";
+  }
 }
 
 async function loadSharedShifts() {
@@ -93,6 +99,7 @@ function onSignedOut() {
   me = null; nameSavedNow = null; shares = []; profile = { display_name: "" }; sharedPairs = []; sharedPatients = []; sharedAll = []; sharedSched = []; sharedCaregiver = "all"; caregiverNames = {}; view = "mine";
   memberCards = []; sharedCards = []; cardMembers = {}; cardOwnerNames = {}; setLS(LS_MEMBER_CARDS, null);
   sharedClients = {}; patientRequests = [];
+  acctUi = acctUiStart();
   pcUi = { ...pcUi, open: null, edit: false, isNew: false };
   setSync("off"); renderAll();
 }
@@ -136,21 +143,8 @@ function renderSyncState() {
   el.innerHTML = `<span class="dot"></span><span>${esc(l.text)}</span>`;
   renderFoot();
 }
-// Payers see the short account card on every tab they use, Messages included.
+// Payers have nothing to sync or share: on their screens the Account Card is all there is.
 const payerScreen = () => readOnly() || (view === "msgs" && payerMode());
-// Your name and mobile number, as the people you share with (or who share with you) see them.
-function profileForm(who) {
-  return `<form id="nameForm" class="field" novalidate>
-        <div class="field"><label class="label" for="dispName">Your name, as ${esc(who)} see it</label>
-        <input id="dispName" autocomplete="name" placeholder="${esc(me.email)}" value="${esc(profile.display_name)}"></div>
-        <div class="field"><label class="label" for="dispPhone">Your mobile number (optional)</label>
-        <input id="dispPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="317-555-0123" value="${esc(showPhone(profile.phone))}">
-        <span class="hint">Lets ${esc(who)} text you with the Text button in Messages.</span></div>
-        <div class="rowline"><button class="ghost" type="submit">Save</button>
-        <span class="ok-msg">${shareUi.savedName ? "Saved." : ""}</span></div>
-        <div class="err" role="alert">${esc(shareUi.nameErr)}</div>
-      </form>`;
-}
 function renderFoot() {
   if (view === "msgs") { $("foot").textContent = "Only you and the person you're writing to can read your messages."; return; }
   $("foot").textContent = readOnly()
@@ -163,14 +157,11 @@ function renderFoot() {
 function renderSync() {
   const el = $("sync");
   if (libFailed) { el.hidden = readOnly(); renderFoot(); return; }
+  renderAccount();
   if (!configured || !sb) { el.hidden = true; renderFoot(); return; }
-  el.hidden = false;
+  el.hidden = !!me && payerScreen();
+  if (el.hidden) { el.innerHTML = ""; renderFoot(); return; }
   const focusId = document.activeElement && el.contains(document.activeElement) ? document.activeElement.id : null;
-  // Keep a name that's being typed when the card redraws (it redraws while sign-in finishes loading).
-  const nameBox = $("dispName");
-  const typedName = nameBox && nameBox.value !== nameBox.defaultValue ? nameBox.value : null;
-  const phoneBox = $("dispPhone");
-  const typedPhone = phoneBox && phoneBox.value !== phoneBox.defaultValue ? phoneBox.value : null;
 
   if (!me) {
     if (signin.step === "email") {
@@ -201,34 +192,12 @@ function renderSync() {
       $("resend").addEventListener("click", e => { e.preventDefault(); sendCode(null, true); });
       $("changeEmail").addEventListener("click", e => { e.preventDefault(); signin = { step: "email", email: signin.email, busy: false, err: "", info: "" }; renderSync(); });
     }
-  } else if (payerScreen()) {
-    // Payers only need to know who they're signed in as, their name and number, and a way out.
-    el.innerHTML = `
-      <div class="rowline"><h2>Your account</h2><button class="link" id="signOut">Sign out</button></div>
-      ${signoutConfirm ? `<div class="confirm"><span>Sign out of Care Hours on this device?</span>
-        <button class="link danger" id="signOutYes">Sign out</button><button class="link" id="signOutNo">Stay signed in</button></div>` : ""}
-      <p class="muted">Signed in as <b>${esc(me.email)}</b></p>
-      ${profileForm("the caregivers who share with you")}`;
-    $("signOut").addEventListener("click", () => { signoutConfirm = true; renderSync(); });
-    if (signoutConfirm) {
-      $("signOutNo").addEventListener("click", () => { signoutConfirm = false; renderSync(); });
-      $("signOutYes").addEventListener("click", signOut);
-    }
-    $("nameForm").addEventListener("submit", saveName);
   } else {
-    const unsynced = allLocal().filter(s => s.dirty).length;
     el.innerHTML = `
       <button type="button" class="collapse" id="syncToggle" aria-expanded="${syncOpen}" aria-controls="syncBody">
         <h2>Sync &amp; sharing</h2><span class="chev" aria-hidden="true"></span></button>
       <div class="syncstate" id="syncState"></div>
       <div class="syncbody" id="syncBody"${syncOpen ? "" : " hidden"}>
-      <div class="rowline"><p class="muted">Signed in as <b>${esc(me.email)}</b></p><button class="link" id="signOut">Sign out</button></div>
-      ${signoutConfirm ? `<div class="confirm"><span>${unsynced
-        ? `${unsynced} change${unsynced === 1 ? " hasn't" : "s haven't"} uploaded yet and will be lost if you sign out now.`
-        : "Signing out removes your shifts from this device. They stay safe in your online account."}</span>
-        <button class="link danger" id="signOutYes">Sign out</button><button class="link" id="signOutNo">Stay signed in</button></div>` : ""}
-      <hr class="divider">
-      ${profileForm("the people you share with")}
       <div class="field">
         <span class="label">Who can see each patient's shifts</span>
         ${shares.length ? sharedGroups().map(g => `<div class="field"><b>${esc(g.person)}</b><ul class="people">${g.items.map(x => {
@@ -257,12 +226,6 @@ function renderSync() {
       syncOpen = !syncOpen; setLS(LS_SYNC_OPEN, syncOpen ? "1" : "0");
       $("syncBody").hidden = !syncOpen; $("syncToggle").setAttribute("aria-expanded", String(syncOpen));
     });
-    $("signOut").addEventListener("click", () => { signoutConfirm = true; renderSync(); });
-    if (signoutConfirm) {
-      $("signOutNo").addEventListener("click", () => { signoutConfirm = false; renderSync(); });
-      $("signOutYes").addEventListener("click", signOut);
-    }
-    $("nameForm").addEventListener("submit", saveName);
     $("shareForm").addEventListener("submit", addShare);
     wireHold();
     $("sharePerson").addEventListener("change", e => { shareUi.person = e.target.value; });
@@ -271,8 +234,6 @@ function renderSync() {
     el.querySelectorAll("[data-unshare-no]").forEach(b => b.addEventListener("click", () => { shareUi.confirm = null; renderSync(); }));
     el.querySelectorAll("[data-unshare-yes]").forEach(b => b.addEventListener("click", () => removeShare(b.dataset.unshareYes)));
   }
-  if (typedName !== null && $("dispName")) $("dispName").value = typedName;
-  if (typedPhone !== null && $("dispPhone")) $("dispPhone").value = typedPhone;
   if (focusId && $(focusId)) $(focusId).focus();
   renderFoot();
 }
@@ -415,24 +376,6 @@ async function signOut() {
   setLS(LS_OWNER, null); saveLocal();
   onSignedOut();
   renderSync();
-}
-async function saveName(ev) {
-  ev.preventDefault();
-  const name = ($("dispName").value || "").trim().slice(0, 100);
-  const phone = normPhone($("dispPhone") ? $("dispPhone").value : profile.phone);
-  shareUi.nameErr = "";
-  if (phone === null) { shareUi.nameErr = "Enter a mobile number with its area code, like 317-555-0123."; renderSync(); $("dispPhone").focus(); return; }
-  let { error } = await sb.from("profiles").upsert({ id: me.id, email: me.email, display_name: name, phone });
-  // A database set up before version 4 of setup.sql has no phone column: save the name anyway.
-  if (error && /phone/i.test(error.message || "")) {
-    if (phone) { shareUi.nameErr = "Saving a mobile number needs the latest setup.sql. Run it in Supabase, then try again."; renderSync(); return; }
-    ({ error } = await sb.from("profiles").upsert({ id: me.id, email: me.email, display_name: name }));
-  }
-  if (error) { shareUi.nameErr = "That didn't save. Check your connection and try again."; renderSync(); return; }
-  profile.display_name = name; profile.phone = phone; nameSavedNow = name;
-  if ($("dispName")) $("dispName").defaultValue = name;   // saved, so it's no longer "being typed"
-  if ($("dispPhone")) { $("dispPhone").value = showPhone(phone); $("dispPhone").defaultValue = showPhone(phone); }
-  shareUi.savedName = true; renderSync(); setTimeout(() => { shareUi.savedName = false; renderSync(); }, 2500);
 }
 const shareKey = x => samePerson(x.person) + "|" + x.email;
 function sharedGroups() {

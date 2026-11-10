@@ -13,14 +13,17 @@ function renderTabs() {
   $("tabShared").setAttribute("aria-selected", String(view === "shared"));
   // There's no Messages tab: conversations open from a card on the Patients tab (caregivers, by patient) or the
   // Caregivers tab (payers, by caregiver). That tab stays selected while a conversation is open, and shows the unread count.
-  const msgs = view === "msgs", peopleUnread = unreadCount();
+  // Requests waiting for your approval (as a patient's client) count too.
+  const msgs = view === "msgs", unread = unreadCount();
+  const waiting = me ? patientRequests.filter(r => r.requester !== me.id).length : 0, peopleUnread = unread + waiting;
   document.body.classList.toggle("msgview", msgs);
   // Patients, for caregivers; Caregivers, for payers.
   const people = view === "people" || view === "ppeople", peopleSel = people || msgs;
   const label = tabPeopleLabel();
   $("tabPeople").setAttribute("aria-selected", String(peopleSel));
   $("tabPeopleLabel").textContent = label;   // Patients for caregivers, Caregivers for payers
-  $("tabPeople").setAttribute("aria-label", peopleUnread ? `${label}, ${peopleUnread} unread` : label);
+  const said = [unread ? `${unread} unread` : "", waiting ? `${waiting} waiting for your approval` : ""].filter(Boolean).join(", ");
+  $("tabPeople").setAttribute("aria-label", said ? `${label}, ${said}` : label);
   $("peopleBadge").hidden = !peopleUnread;
   $("peopleBadge").textContent = peopleUnread || "";
   document.body.classList.toggle("peopleview", people);

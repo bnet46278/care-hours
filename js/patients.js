@@ -180,9 +180,10 @@ function wireCards(el) {
 // Each caregiver who shares with the payer, with their contact details and the cards of the patients they care for.
 const tabPeopleLabel = () => payerMode() ? "Caregivers" : "Patients";
 function cardsOfCaregiver(id) {
-  // One card per patient: the caregiver's own card if they set one up, otherwise any card for that patient.
+  // One card per patient: the caregiver's own card if they set one up, otherwise any card for that patient
+  // (including one a client set up on their Account Card).
   return patientsOf(id).map(person => {
-    const same = sharedCards.filter(c => samePerson(c.person) === samePerson(person));
+    const same = [...sharedCards, ...liveCards()].filter(c => samePerson(c.person) === samePerson(person));
     return { person, card: same.find(c => c.owner === id) || same[0] || null };
   });
 }
@@ -332,7 +333,7 @@ function wireForm() {
 }
 function currentCard() {
   if (!pcUi.open) return null;
-  return (readOnly() ? sharedCards : [...liveCards(), ...memberCards, ...sharedCards]).find(c => cardKey(c) === pcUi.open) || null;
+  return (readOnly() ? [...sharedCards, ...liveCards()] : [...liveCards(), ...memberCards, ...sharedCards]).find(c => cardKey(c) === pcUi.open) || null;
 }
 
 async function saveCard(ev) {
@@ -365,12 +366,16 @@ async function saveCard(ev) {
   const prevEmail = prev ? clientEmailOf(prev) : null;   // before the client is changed below
   // A patient already in Care Hours (same name, date of birth and phone) isn't added again: their client is
   // asked to approve adding this caregiver.
-  if (pcUi.isNew) {
+  const isNew = pcUi.isNew;
+  if (isNew) {
     const asked = await requestPatient(c);
     if (asked === "requested" || asked === "already") {
+      // The client also gets an email about it (when the "notify" Edge Function is set up).
+      const mailed = asked === "requested" && await notifyEmail({ action: "request", person });
       pcUi = { ...pcUi, edit: false, isNew: false, err: "", returnTo: null,
         notice: asked === "requested"
           ? `${person} is already in Care Hours, so ${person}'s client has been asked to approve adding you. You'll see ${person} here once they do.`
+            + (mailed && mailed.sent === "notice" ? " We emailed them too." : "")
           : `You've already asked to be added to ${person}. You'll see ${person} here once ${person}'s client approves.` };
       await loadCardSharing();
       renderAll();
@@ -383,14 +388,22 @@ async function saveCard(ev) {
   pcUi.busy = false;
   if (client.error) return err(client.error);
   c.clientId = client.id;
-  if (readOnly() || (prev && !isMine(prev))) return saveSharedEdit(prev, c, client, prevEmail);
+  if (prev ? !isMine(prev) : readOnly()) return saveSharedEdit(prev, c, client, prevEmail);   // a client's own card saves like any of yours
   // A patient removed earlier and added again gets their old card back.
   const old = pcards.find(x => x.id === (prev ? prev.id : cardId(person)));
   const key = cardKey({ id: old ? old.id : cardId(person) });
   pcUi = { ...pcUi, open: key, edit: false, isNew: false, err: "", returnTo: null, notice: client.notice || "" };
   putCard({ ...(old || {}), ...c, id: old ? old.id : cardId(person), deleted: false, updatedAt: old ? old.updatedAt : 0 });
   renderAll();
-  await sharePayerTo(person, clientEmailOf(pcards.find(x => x.id === (old ? old.id : cardId(person)))), prevEmail);
+  const clientEmail = clientEmailOf(pcards.find(x => x.id === (old ? old.id : cardId(person))));
+  if (isNew && clientEmail && clientEmail !== (me && me.email || "").toLowerCase() && sb && me) {
+    // A new patient's client gets this caregiver's shifts, and an email to set up their client account.
+    const said = await inviteClient(person, clientEmail);
+    pcUi.notice = [pcUi.notice, said].filter(Boolean).join(" ");
+    renderAll();
+  } else {
+    await sharePayerTo(person, clientEmail, prevEmail);
+  }
   pickFor(back, person);
 }
 
@@ -562,6 +575,8 @@ function loadMemberCardsSaved() {
 document.addEventListener("visibilitychange", () => {
   if (me && document.visibilityState === "visible") loadCardSharing().then(renderAll);
 });
+// Now and then, so a new request to approve shows on the Caregivers tab's badge while the app is open.
+setInterval(() => { if (me && document.visibilityState === "visible") loadCardSharing().then(renderAll); }, 60000);
 
 // ---------- caregivers on a card ----------
 // The caregiver who set up the card, a caregiver on it, or its payer can add caregivers.
