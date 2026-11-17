@@ -87,14 +87,11 @@ test.describe("Renaming a patient online", () => {
     await pat.signIn("pat@example.com");
     await expect(pat.weekTotal()).toHaveText("5h 00m");
 
-    // Pat's Patients list on the Caregivers tab.
-    await pat.openPatients();
-    const mine = pat.$("#cpList .pcard").filter({ hasText: "Mom" });
-    await mine.locator(".prow").click();
-    await expect(pat.$("#pcDetails")).toHaveCount(1);                  // open in one list only
+    // Mom's card, under a caregiver on Pat's Caregivers tab.
+    await pat.openCard("Mom");
     await rename(pat, "Mother");
     await expect(pat.$("#pcErr")).toBeEmpty();
-    await expect(pat.$("#cpList .pcard").filter({ hasText: "Mother" })).toHaveCount(1);
+    await expect(pat.$(".cgcard .pcard").filter({ hasText: "Mother" }).first()).toBeVisible();
 
     expect(persons(db, "patients")).toEqual(["Mother"]);
     expect(persons(db, "shifts").sort()).toEqual(["Mother", "Mother"]);
@@ -148,8 +145,8 @@ test.describe("Renaming a patient online", () => {
   });
 });
 
-test.describe("A client's Patients list", () => {
-  test("a client adds a patient, renames them, and adds a caregiver who can log shifts", async ({ openApp, db }) => {
+test.describe("A client's own patients", () => {
+  test("a client adds a patient on the Account Card and renames them there", async ({ openApp, db }) => {
     const pat = await openApp();
     await pat.signIn("pat@example.com");
     await pat.$("#acctRoleClient").check();
@@ -157,42 +154,19 @@ test.describe("A client's Patients list", () => {
     await pat.$("#acctSave").click();
     await expect(pat.page.getByRole("tab")).toHaveText(["Care Hours", "Caregivers"]);
     await pat.openPatients();
-    await expect(pat.$("#patientsBody")).toContainText("No patients yet. Add the person you arrange care for.");
+    await expect(pat.$("#patientsBody .pcard")).toHaveCount(0);           // no Patients list on the Caregivers tab
 
-    // + Add patient goes to the form on the Account Card.
-    await pat.$("#cpAddPatient").click();
-    await expect(pat.$("#apName")).toBeFocused();
+    await pat.$("#acctAddPatient").click();
     await pat.$("#apName").fill("Grandma");
     await pat.$("#apSave").click();
-    await expect(pat.$("#cpList .pcard")).toHaveText([/Grandma/]);
+    await expect.poll(() => persons(db, "patients")).toEqual(["Grandma"]);
+    await expect(pat.$("#patientsBody .pcard")).toHaveCount(0);
 
-    // Rename from the card.
-    await pat.$("#cpList .prow").click();
-    await rename(pat, "Grandma Jo");
-    await expect(pat.$("#cpList .pcard")).toHaveText([/Grandma Jo/]);
-    await expect.poll(() => persons(db, "patients")).toEqual(["Grandma Jo"]);
-
-    // Rename again from the Account Card.
-    await pat.$("#acctPatients .apcard").filter({ hasText: "Grandma Jo" }).getByRole("button", { name: "Edit" }).click();
-    await expect(pat.$("#apName")).toHaveValue("Grandma Jo");
-    await pat.$("#apName").fill("Jo");
+    await pat.$("#acctPatients .apcard").filter({ hasText: "Grandma" }).getByRole("button", { name: "Edit" }).click();
+    await expect(pat.$("#apName")).toHaveValue("Grandma");
+    await pat.$("#apName").fill("Grandma Jo");
     await pat.$("#apSave").click();
-    await expect(pat.$("#cpList .pcard")).toHaveText([/Jo/]);
-    await expect.poll(() => persons(db, "patients")).toEqual(["Jo"]);
-
-    // Add a caregiver to her.
-    if ((await pat.$("#cpList .prow").getAttribute("aria-expanded")) !== "true") await pat.$("#cpList .prow").click();
-    await invite(pat, "ann@example.com");
-    await expect(pat.$("#pcMemberOk")).toHaveText("ann@example.com can now see and edit Jo's card.");
-    const ann = await openApp();
-    await ann.signIn("ann@example.com");
-    await ann.addShift({ date: "2026-11-02", start: "09:00", end: "11:00", patient: "Jo" });
-    await ann.waitSynced();
-    expect(db.rows("shifts")[0]).toMatchObject({ person: "Jo", owner: db.userId("ann@example.com") });
-    // Ann shares her shifts for Jo with Pat, so Pat sees them.
-    await pat.reload();
-    await expect(pat.weekTotal()).toHaveText("2h 00m");
-    await pat.openPatients();
-    await expect(pat.$(".cgcard")).toHaveText([/Ann L\.|ann@example\.com/]);
+    await expect(pat.$("#acctPatients .apcard")).toHaveText([/Grandma Jo/]);
+    await expect.poll(() => persons(db, "patients")).toEqual(["Grandma Jo"]);
   });
 });

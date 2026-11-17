@@ -167,9 +167,8 @@ function wireCards(el) {
   el.querySelectorAll("[data-req-decline]").forEach(b => b.addEventListener("click", () => answerRequest(b.dataset.reqDecline, false)));
   el.querySelectorAll("[data-req-cancel]").forEach(b => b.addEventListener("click", () => answerRequest(b.dataset.reqCancel, false)));
   el.querySelectorAll("[data-pc]").forEach(b => b.addEventListener("click", () => {
-    const k = b.dataset.pc, where = b.dataset.where || "";
-    const same = pcUi.open === k && (pcUi.openWhere || "") === where;
-    pcUi = { ...pcUi, open: same && !pcUi.edit ? null : k, openWhere: where, edit: false, isNew: false, confirmDel: false, err: "", notice: "",
+    const k = b.dataset.pc;
+    pcUi = { ...pcUi, open: pcUi.open === k && !pcUi.edit ? null : k, edit: false, isNew: false, confirmDel: false, err: "", notice: "",
       memberErr: "", memberOk: "", inviteEmail: "", confirmMember: null, confirmLeave: false };
     renderPatients();
   }));
@@ -231,13 +230,7 @@ function renderCaregivers(el) {
       ${requestsSection()}
       ${pcUi.notice ? `<p class="ok-msg" id="pcNotice">${esc(pcUi.notice)}</p>` : ""}
       ${ids.length ? `<ul class="pclist">${ids.map(row).join("")}</ul>` : `<p class="empty">No caregivers share with you yet.</p>`}
-      ${clientPatientsSection()}
     </div>`;
-  if ($("cpAddPatient")) $("cpAddPatient").addEventListener("click", () => {
-    // Added on the Account Card, as the client's own patient.
-    acctUi = { ...acctUi, pat: "new", patErr: "", confirmDel: null }; renderAccount(true);
-    if ($("apForm")) { $("apForm").scrollIntoView({ block: "start", behavior: "smooth" }); $("apName").focus({ preventScroll: true }); }
-  });
   el.querySelectorAll("[data-cg]").forEach(b => b.addEventListener("click", () => {
     const id = b.dataset.cg;
     pcUi = { ...pcUi, openCg: openId === id ? null : id, open: null, edit: false, confirmDel: false, err: "", notice: "",
@@ -247,30 +240,17 @@ function renderCaregivers(el) {
   wireCards(el);
 }
 
-// A client's patients: the ones they added and the ones their caregivers share, one card each. Open one to edit
-// it (name too) or to add and remove its caregivers.
-function clientPatientsSection() {
-  const seen = new Set();
-  const cards = [...liveCards(), ...sharedCards].filter(c => { const k = cardKey(c); if (seen.has(k)) return false; seen.add(k); return true; })
-    .sort((a, b) => a.person.localeCompare(b.person) || (isMine(a) ? -1 : 1));
-  return `<div class="rowline" id="cpHead"><h3>Patients</h3><button type="button" class="ghost" id="cpAddPatient">+ Add patient</button></div>
-    ${cards.length ? `<ul class="pclist" id="cpList">${cards.map(c => cardRow(c, !isMine(c), "pats")).join("")}</ul>
-      <p class="hint">Open a patient to edit their details, or to add and remove their caregivers.</p>`
-      : `<p class="empty">No patients yet. Add the person you arrange care for.</p>`}`;
-}
-
 function newCard(returnTo) {
   if (readOnly()) return;
-  pcUi = { ...pcUi, open: null, openWhere: "", edit: true, isNew: true, confirmDel: false, err: "", busy: false, returnTo: returnTo || null, notice: "" };
+  pcUi = { ...pcUi, open: null, edit: true, isNew: true, confirmDel: false, err: "", busy: false, returnTo: returnTo || null, notice: "" };
   renderPatients();
   $("patientsCard").scrollIntoView({ block: "start", behavior: "smooth" });
   focusForm();
 }
 function focusForm() { const f = $("pcName") || $("pcDob"); if (f && !f.disabled) f.focus({ preventScroll: true }); }
 
-// where: which list the row is in, when a card shows in two (a client's Patients list, and under a caregiver).
-function cardRow(c, ro, where = "") {
-  const k = cardKey(c), open = pcUi.open === k && (pcUi.openWhere || "") === where;
+function cardRow(c, ro) {
+  const k = cardKey(c), open = pcUi.open === k;
   const age = ageOf(c.birthDate);
   const cl = clientOf(c);
   const payer = c.payerSame ? `Client: ${c.person} (Self)` : cl && cl.name ? `Client: ${cl.name}${c.payerRel ? ` (${c.payerRel})` : ""}` : "";
@@ -280,7 +260,7 @@ function cardRow(c, ro, where = "") {
     theirs && !ro ? "shared with you" : "", dup ? `also on ${ownerName(dup.owner)}'s card` : ""].filter(Boolean).join(" · ");
   const color = tint(c);   // patient color for caregivers, caregiver color for payers
   return `<li class="pcard${color}${open ? " open" : ""}">
-    <button type="button" class="prow" data-pc="${esc(k)}" data-where="${where}" aria-expanded="${open}">
+    <button type="button" class="prow" data-pc="${esc(k)}" aria-expanded="${open}">
       <span class="dot"></span><span class="pname"><b>${esc(c.person)}</b>${sub ? `<span class="hint">${esc(sub)}</span>` : ""}</span></button>
     ${open ? (pcUi.edit ? cardForm(c) : cardDetails(c, ro)) : ""}</li>`;
 }

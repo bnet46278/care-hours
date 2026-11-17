@@ -243,9 +243,8 @@ test.describe("Patients online", () => {
     await expect(pat.page.getByRole("tab")).toHaveText(["Care Hours", "Caregivers"]);
     await pat.openPatients();
     await expect(pat.$("#patientsCard h2").first()).toHaveText("Caregivers");
-    await expect(pat.$("#addPatient")).toHaveCount(0);   // clients add patients from their own Patients list instead
-    await expect(pat.$(".cgcard .pcard").filter({ hasText: "Mom" })).toContainText("Cynda B.'s card");
-    await expect(pat.$("#cpList .pcard").filter({ hasText: "Mom" })).toContainText("Cynda B.'s card");   // and in the client's Patients list
+    await expect(pat.$("#addPatient")).toHaveCount(0);   // clients add patients on their Account Card
+    await expect(pat.$(".pcard:not(.cgcard)").filter({ hasText: "Mom" })).toContainText("Cynda B.'s card");
     await pat.openCard("Mom");
     await expect(pat.$("#pcDetails")).toContainText("Door code 4321");
     await expect(pat.page.getByRole("button", { name: "Remove patient" })).toHaveCount(0);
@@ -376,8 +375,7 @@ test.describe("Clients already in Care Hours", () => {
     const pat = await openApp();
     await pat.signIn("pat@example.com");
     await pat.openPatients();
-    await expect(pat.$(".cgcard")).toHaveCount(2);
-    await expect(pat.$("#cpList .pcard .pname b")).toHaveText(["Grandpa", "Mom"]);   // and both in Pat's Patients list
+    await expect(pat.$(".pcard")).toHaveCount(2);
   });
 
   test("the same caregiver's second patient for that client uses the same client", async ({ openApp, db }) => {
