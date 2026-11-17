@@ -10,17 +10,13 @@ async function saveAccount(app, { role, name, address, phone } = {}) {
   await app.$("#acctSave").click();
   await expect(app.$("#nameForm")).toContainText("Saved.");
 }
-async function addMyPatient(app, { name, dob, address, phone, email, notes }) {
-  await app.$("#acctAddPatient").click();
-  await app.$("#apName").fill(name);
-  if (dob) await app.$("#apDob").fill(dob);
-  if (address) await app.$("#apAddress").fill(address);
-  if (phone) await app.$("#apPhone").fill(phone);
-  if (email) await app.$("#apEmail").fill(email);
-  if (notes) await app.$("#apNotes").fill(notes);
-  await app.$("#apSave").click();
+// A patient Pat added herself, as clients could before the Account Card lost its Patient Details.
+async function addMyPatient(app, { name, dob, phone }) {
+  await app.page.evaluate(async p => {
+    const cl = await ensureMyClient();
+    putCard({ id: freshCardId(p.name), person: p.name, birthDate: p.dob || null, phone: p.phone ? normPhone(p.phone) : "", clientId: cl.id, updatedAt: 0 });
+  }, { name, dob, phone });
 }
-const myPatientRow = (app, name) => app.$("#acctPatients .apcard").filter({ hasText: name });
 
 test.describe("Account Card", () => {
   test("shows only when signed in, with the sign-in email that can't be changed", async ({ openApp, db }) => {
@@ -45,7 +41,7 @@ test.describe("Account Card", () => {
     await expect(app.$("#dispPhone")).toHaveValue("317-555-0123");
   });
 
-  test("a client gets the payer side right away, and adds Patient Details", async ({ openApp, db }) => {
+  test("a client gets the payer side right away, and their details become their client record", async ({ openApp, db }) => {
     const pat = await openApp();
     await pat.signIn("pat@example.com");
     await expect(pat.$("#clock")).toBeVisible();   // nobody shares with Pat yet, and no role picked
@@ -58,48 +54,17 @@ test.describe("Account Card", () => {
     expect(db.rows("profiles")[0]).toMatchObject({ role: "client", address: "9 Elm St" });
     await expect(pat.page.getByRole("tab")).toHaveText(["Care Hours", "Caregivers"]);
     for (const id of ["#clock", "#addBtn", "#sync"]) await expect(pat.$(id)).toBeHidden();
-    await expect(pat.$("#acctPatients")).toContainText("No patients yet.");
+    await expect(pat.$("#acctPatients")).toHaveCount(0);   // no patient list on the Account Card
+    await expect(pat.$("#acctAddPatient")).toHaveCount(0);
 
-    // Pat adds Mom.
-    await addMyPatient(pat, { name: "Mom", dob: "1944-03-03", address: "5 Oak Ln", phone: "(317) 555-0100", email: "Mom@Example.com", notes: "Door code 4321" });
-    await expect(myPatientRow(pat, "Mom")).toContainText("Age 82 · 317-555-0100");
-    await expect(pat.$("#apForm")).toHaveCount(0);
-
-    // Pat's details are her client record, and Mom is linked to it.
-    await expect.poll(() => db.rows("patients").length).toBe(1);
     const patId = db.userId("pat@example.com");
-    const client = db.rows("clients")[0];
-    expect(client).toMatchObject({ owner: patId, name: "Pat P.", address: "9 Elm St", email: "pat@example.com", phone: "+13175550177" });
-    expect(db.rows("patients")[0]).toMatchObject({ owner: patId, person: "Mom", birth_date: "1944-03-03", address: "5 Oak Ln",
-      phone: "+13175550100", email: "mom@example.com", notes: "Door code 4321", client_id: client.id });
-
-    // Editing a patient: the name can be changed too (see the renaming tests).
-    await myPatientRow(pat, "Mom").getByRole("button", { name: "Edit" }).click();
-    await expect(pat.$("#apName")).toHaveValue("Mom");
-    await expect(pat.$("#apName")).toBeFocused();
-    await pat.$("#apNotes").fill("Door code 9876");
-    await pat.$("#apSave").click();
-    await expect.poll(() => db.rows("patients")[0].notes).toBe("Door code 9876");
+    await expect.poll(() => db.rows("clients").length).toBe(1);
+    expect(db.rows("clients")[0]).toMatchObject({ owner: patId, name: "Pat P.", address: "9 Elm St", email: "pat@example.com", phone: "+13175550177" });
 
     // Saving the account again updates the client record; no second one is made.
     await saveAccount(pat, { address: "10 Elm St" });
     await expect.poll(() => db.rows("clients")[0].address).toBe("10 Elm St");
     expect(db.rows("clients")).toHaveLength(1);
-
-    // A patient can't be added twice, and needs a name.
-    await pat.$("#acctAddPatient").click();
-    await pat.$("#apSave").click();
-    await expect(pat.$("#apErr")).toHaveText("Enter the patient's name.");
-    await pat.$("#apName").fill(" mom ");
-    await pat.$("#apSave").click();
-    await expect(pat.$("#apErr")).toHaveText("You already have a patient named Mom.");
-    await pat.$("#apCancel").click();
-
-    // Removing asks first.
-    await myPatientRow(pat, "Mom").getByRole("button", { name: "Remove" }).click();
-    await myPatientRow(pat, "Mom").locator("[data-ap-delyes]").click();
-    await expect(pat.$("#acctPatients .apcard")).toHaveCount(0);
-    await expect.poll(() => db.rows("patients")[0].deleted).toBe(true);
   });
 
   test("a caregiver who adds a client's patient is added once the client approves", async ({ openApp, db }) => {
