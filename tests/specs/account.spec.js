@@ -30,7 +30,7 @@ test.describe("Account Card", () => {
     await expect(app.$("#account h2")).toHaveText("Your account");
     await expect(app.$("#acctEmail")).toHaveText("cynda@example.com");
     await expect(app.$("#account input[type=email]")).toHaveCount(0);
-    await expect(app.$("#acctPatients h3")).toHaveText("Your patients");   // a caregiver's list; Patient Details are for clients
+    await expect(app.$("#acctPatients")).toHaveCount(0);   // caregivers' patients are on the Patients tab; Patient Details are for clients
 
     await saveAccount(app, { role: "Caregiver", name: "Cynda B.", address: "1 Main St\nIndianapolis", phone: "(317) 555-0123" });
     expect(db.rows("profiles")[0]).toMatchObject({ display_name: "Cynda B.", address: "1 Main St\nIndianapolis", phone: "+13175550123", role: "caregiver" });
@@ -185,58 +185,37 @@ test.describe("Account Card before running the new setup.sql", () => {
   });
 });
 
-test.describe("Account Card: caregivers add patients", () => {
-  // Cynda, a caregiver, fills in the new-patient form on her Account Card. same: true | false | undefined (not answered).
-  async function cgAddPatient(app, { name, dob, phone, email, same, clientEmail }) {
-    await app.$("#acctAddPatient").click();
-    await app.$("#apName").fill(name);
-    if (dob) await app.$("#apDob").fill(dob);
-    if (phone) await app.$("#apPhone").fill(phone);
-    if (email) await app.$("#apEmail").fill(email);
-    if (same === true) await app.$("#apSameYes").check();
-    if (same === false) await app.$("#apSameNo").check();
-    if (clientEmail) await app.$("#apClientEmail").fill(clientEmail);
-    await app.$("#apSave").click();
-  }
+test.describe("Caregivers add patients: the client is emailed", () => {
+  // Cynda, a caregiver, adds patients on the Patients tab.
   async function cynda(openApp) {
     const app = await openApp();
     await app.signIn("cynda@example.com");
     await saveAccount(app, { role: "Caregiver", name: "Cynda B." });
     return app;
   }
+  const notice = async app => { await app.openPatients(); return app.$("#pcNotice"); };
+
+  test("a caregiver's Account Card has no patient list", async ({ openApp }) => {
+    const app = await cynda(openApp);
+    await app.addPatient({ name: "Mom" });
+    await expect(app.$("#acctPatients")).toHaveCount(0);
+    await expect(app.$("#acctAddPatient")).toHaveCount(0);
+  });
 
   test("a patient who is their own client gets an email to set up their client account", async ({ openApp, db }) => {
     const app = await cynda(openApp);
-    // The form asks; the patient's email is needed to invite them.
-    await cgAddPatient(app, { name: "Mom" });
-    await expect(app.$("#apErr")).toHaveText("Is the patient also the client? Pick Yes or No.");
-    await app.$("#apSameYes").check();
-    await expect(app.$("#apSameHint")).toBeVisible();
-    await expect(app.$("#apClientWrap")).toBeHidden();
-    await app.$("#apSave").click();
-    await expect(app.$("#apErr")).toHaveText("Enter the patient's email, so they can set up their client account.");
-    await app.$("#apEmail").fill("Mom@Example.com");
-    await app.$("#apSave").click();
-
-    await expect(app.$("#acctNotice")).toHaveText("Mom is added. We emailed mom@example.com an invitation to set up their client account.");
-    await expect(app.$("#acctPatients .apcard").filter({ hasText: "Mom" })).toContainText("Is their own client");
+    await app.addPatient({ name: "Mom", email: "Mom@Example.com", same: true });
+    await expect(await notice(app)).toContainText("We emailed mom@example.com an invitation to set up their client account.");
     expect(db.emails).toEqual([{ to: "mom@example.com", kind: "invite", person: "Mom" }]);
     expect(db.rows("shares")).toMatchObject([{ viewer_email: "mom@example.com", person: "Mom" }]);
     await expect.poll(() => db.rows("patients").length).toBe(1);
     expect(db.rows("patients")[0]).toMatchObject({ person: "Mom", payer_same: true, email: "mom@example.com" });
-    // It's on the Patients tab too; Open goes there.
-    await app.$("#acctPatients [data-ap-open]").click();
-    await expect(app.$("#pcDetails")).toContainText("Same as the patient");
   });
 
   test("another client gets the email, and is set up as a client when they sign in", async ({ openApp, db }) => {
     const app = await cynda(openApp);
-    await cgAddPatient(app, { name: "Mom", dob: "1944-03-03", phone: "317-555-0100", same: false });
-    await expect(app.$("#apErr")).toHaveText("Enter the client's full email address, like name@example.com.");
-    await app.$("#apClientEmail").fill("pat@example.com");
-    await app.$("#apSave").click();
-    await expect(app.$("#acctNotice")).toHaveText("Mom is added. We emailed pat@example.com an invitation to set up their client account.");
-    await expect(app.$("#acctPatients .apcard").filter({ hasText: "Mom" })).toContainText("Client: pat@example.com");
+    await app.addPatient({ name: "Mom", dob: "1944-03-03", phone: "317-555-0100", client: { email: "pat@example.com" } });
+    await expect(await notice(app)).toContainText("We emailed pat@example.com an invitation to set up their client account.");
     expect(db.emails).toEqual([{ to: "pat@example.com", kind: "invite", person: "Mom" }]);
     await app.addShift({ date: "2026-11-03", start: "08:00", end: "10:00", patient: "Mom" });
     await app.waitSynced();
@@ -259,16 +238,16 @@ test.describe("Account Card: caregivers add patients", () => {
     const pat = await openApp();
     await pat.signIn("pat@example.com");
     const app = await cynda(openApp);
-    await cgAddPatient(app, { name: "Dad", same: false, clientEmail: "pat@example.com" });
-    await expect(app.$("#acctNotice")).toHaveText("Dad is added. pat@example.com already uses Care Hours, so we emailed them that you added Dad.");
+    await app.addPatient({ name: "Dad", client: { email: "pat@example.com" } });
+    await expect(await notice(app)).toContainText("pat@example.com already uses Care Hours, so we emailed them that you added Dad.");
     expect(db.emails).toEqual([{ to: "pat@example.com", kind: "notice", person: "Dad" }]);
   });
 
   test("without the email function, the caregiver is told to ask the client to sign in", async ({ openApp, db }) => {
     db.functions = false;
     const app = await cynda(openApp);
-    await cgAddPatient(app, { name: "Dad", same: false, clientEmail: "pat@example.com" });
-    await expect(app.$("#acctNotice")).toHaveText("Dad is added. We couldn't email pat@example.com. Ask them to sign in to Care Hours with that email to set up their client account.");
+    await app.addPatient({ name: "Dad", client: { email: "pat@example.com" } });
+    await expect(await notice(app)).toContainText("We couldn't email pat@example.com. Ask them to sign in to Care Hours with that email to set up their client account.");
     expect(db.rows("shares")).toHaveLength(1);   // Pat still gets the shifts
   });
 
@@ -280,8 +259,9 @@ test.describe("Account Card: caregivers add patients", () => {
     await expect.poll(() => db.rows("patients").length).toBe(1);
 
     const app = await cynda(openApp);
-    await cgAddPatient(app, { name: "Mom", dob: "1944-03-03", phone: "(317) 555-0100", same: false, clientEmail: "someone@example.com" });
-    await expect(app.$("#acctNotice")).toHaveText("Mom is already in Care Hours, so Mom's client has been asked to approve adding you. We emailed them too.");
+    await app.addPatient({ name: "Mom", dob: "1944-03-03", phone: "(317) 555-0100", client: { email: "someone@example.com" } });
+    await expect(await notice(app)).toContainText("Mom is already in Care Hours, so Mom's client has been asked to approve adding you.");
+    await expect(app.$("#pcNotice")).toContainText("We emailed them too.");
     expect(db.rows("patients")).toHaveLength(1);
     expect(db.emails).toEqual([{ to: "pat@example.com", kind: "request", person: "Mom" }]);
 

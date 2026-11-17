@@ -12,7 +12,7 @@
 // added again: their client is asked, in the app and by email, to approve adding the caregiver.
 // The emails go out through the "notify" Edge Function (supabase/functions/notify).
 
-const acctUiStart = () => ({ err: "", saved: false, busy: false, pat: null, patErr: "", patBusy: false, confirmDel: null, notice: "" });
+const acctUiStart = () => ({ err: "", saved: false, busy: false, pat: null, patErr: "", patBusy: false, confirmDel: null });
 let acctUi = acctUiStart();
 
 const myRole = () => (profile && profile.role) || "";
@@ -68,7 +68,7 @@ function renderAccount(force) {
         <span class="ok-msg">${acctUi.saved ? "Saved." : ""}</span></div>
       <div class="err" role="alert">${esc(acctUi.err)}</div>
     </form>
-    ${role === "client" ? myPatientsSection() : role === "caregiver" || !payerMode() ? caregiverPatientsSection() : ""}`;
+    ${role === "client" ? myPatientsSection() : ""}`;
   for (const [id, v] of Object.entries(typed)) if ($(id)) { if (typeof v === "boolean") $(id).checked = v; else $(id).value = v; }
   $("signOut").addEventListener("click", () => { signoutConfirm = true; renderAccount(true); });
   if (signoutConfirm) {
@@ -174,27 +174,7 @@ function myPatientsSection() {
     <p class="hint">Your caregivers see these details. A caregiver who adds one of your patients has to be approved by you first, on your Caregivers tab.</p>
   </div>`;
 }
-// ---------- caregivers: their patients ----------
-// The list, with each patient's client, and Open to go to the full card on the Patients tab.
-function caregiverPatientsSection() {
-  const cards = [...liveCards(), ...memberCards].sort((a, b) => a.person.localeCompare(b.person));
-  const row = c => {
-    const cl = clientOf(c);
-    const sub = c.payerSame ? "Is their own client" : cl && (cl.name || cl.email) ? `Client: ${cl.name || cl.email}` : "No client yet";
-    return `<li class="apcard${pc(c.person)}"><div class="prow acctpat"><span class="dot"></span>
-      <span class="pname"><b>${esc(c.person)}</b><span class="hint">${esc(sub)}${isMine(c) ? "" : ` · ${esc(ownerName(c.owner))}'s card`}</span></span>
-      <button type="button" class="link" data-ap-open="${esc(cardKey(c))}">Open</button></div></li>`;
-  };
-  return `<div class="acctpatients" id="acctPatients">
-    <div class="rowline"><h3>Your patients</h3>${acctUi.pat ? "" : `<button type="button" class="ghost" id="acctAddPatient">+ Add patient</button>`}</div>
-    ${acctUi.notice ? `<p class="ok-msg" id="acctNotice">${esc(acctUi.notice)}</p>` : ""}
-    ${acctUi.pat === "new" ? patientForm(null, true) : ""}
-    ${cards.length ? `<ul class="pclist">${cards.map(row).join("")}</ul>`
-      : acctUi.pat !== "new" ? `<p class="empty">No patients yet.</p>` : ""}
-    <p class="hint">Each patient's client (the person who pays) gets an email to set up their client account, and sees your shifts for that patient.</p>
-  </div>`;
-}
-function patientForm(c, cg) {
+function patientForm(c) {
   const v = c || { person: "", birthDate: "", address: "", phone: "", email: "", notes: "" };
   const age = ageOf(v.birthDate);
   const f = (id, label, val, attrs = "") => `<div class="field"><label class="label" for="${id}">${label}</label><input id="${id}" value="${esc(val || "")}" ${attrs}></div>`;
@@ -207,13 +187,6 @@ function patientForm(c, cg) {
     ${f("apPhone", "Phone", v.phone ? showPhone(v.phone) : "", 'type="tel" inputmode="tel" placeholder="317-555-0123"')}
     ${f("apEmail", "Email", v.email, 'type="email" inputmode="email" autocomplete="off" placeholder="name@example.com"')}
     <div class="field"><label class="label" for="apNotes">Notes</label><textarea id="apNotes" rows="3" maxlength="5000" placeholder="Allergies, door code, what to know…">${esc(v.notes || "")}</textarea></div>
-    ${cg ? `<fieldset class="rolepick"><legend class="label">Is the patient also the client (the person who pays)?</legend>
-        <div class="inline"><label class="checkline"><input type="radio" name="apSame" id="apSameYes" value="yes"> Yes</label>
-        <label class="checkline"><input type="radio" name="apSame" id="apSameNo" value="no"> No</label></div>
-        <span class="hint" id="apSameHint" hidden>The patient gets an email to set up their client account, so add their email above.</span></fieldset>
-      <div class="field" id="apClientWrap" hidden><label class="label" for="apClientEmail">Client's email</label>
-        <input id="apClientEmail" type="email" inputmode="email" autocomplete="off" placeholder="client@example.com">
-        <span class="hint">They get an email to set up their client account, and see your shifts for this patient.</span></div>` : ""}
     <div class="err" id="apErr" role="alert">${esc(acctUi.patErr)}</div>
     <div class="formacts"><button type="submit" class="btn" id="apSave"${acctUi.patBusy ? " disabled" : ""}>${acctUi.patBusy ? "Saving…" : "Save patient"}</button>
       <button type="button" class="link" id="apCancel">Cancel</button></div>
@@ -226,22 +199,13 @@ function wirePatients(el) {
   el.querySelectorAll("[data-ap-edit]").forEach(b => b.addEventListener("click", () => {
     acctUi = { ...acctUi, pat: b.dataset.apEdit, patErr: "", confirmDel: null }; renderAccount(true); $("apName").focus();
   }));
-  el.querySelectorAll("[data-ap-open]").forEach(b => b.addEventListener("click", () => {
-    // The full card, on the Patients tab.
-    view = "people"; pcUi = { ...pcUi, open: b.dataset.apOpen, edit: false, isNew: false, notice: "" };
-    renderAll(); $("patientsCard").scrollIntoView({ block: "start", behavior: "smooth" });
-  }));
   el.querySelectorAll("[data-ap-del]").forEach(b => b.addEventListener("click", () => { acctUi.confirmDel = b.dataset.apDel; renderAccount(true); }));
   el.querySelectorAll("[data-ap-delno]").forEach(b => b.addEventListener("click", () => { acctUi.confirmDel = null; renderAccount(true); }));
   el.querySelectorAll("[data-ap-delyes]").forEach(b => b.addEventListener("click", () => {
     acctUi.confirmDel = null; removeCard(b.dataset.apDelyes); renderAll(); renderAccount(true);
   }));
   if (!$("apForm")) return;
-  $("apForm").addEventListener("submit", $("apSameYes") ? saveCaregiverPatient : saveMyPatient);
-  el.querySelectorAll('input[name="apSame"]').forEach(r => r.addEventListener("change", () => {
-    $("apSameHint").hidden = !$("apSameYes").checked;
-    $("apClientWrap").hidden = !$("apSameNo").checked;
-  }));
+  $("apForm").addEventListener("submit", saveMyPatient);
   $("apCancel").addEventListener("click", () => { acctUi = { ...acctUi, pat: null, patErr: "" }; renderAccount(true); });
   $("apDob").addEventListener("input", () => { const a = ageOf($("apDob").value); $("apAge").textContent = a !== null ? `Age ${a}` : ""; });
 }
@@ -282,62 +246,6 @@ async function saveMyPatient(ev) {
   renderAll(); renderAccount(true);
 }
 
-// A caregiver adds a patient. A patient who's already in Care Hours (same name, date of birth and phone) isn't
-// added again: their client is asked to approve adding this caregiver, and gets an email about it. Otherwise
-// the card is made, the client gets this caregiver's shifts for the patient, and an email to set up their account.
-async function saveCaregiverPatient(ev) {
-  ev.preventDefault();
-  const err = m => { acctUi.patErr = m; acctUi.patBusy = false; $("apErr").textContent = m; if ($("apSave")) { $("apSave").disabled = false; $("apSave").textContent = "Save patient"; } };
-  const val = id => ($(id) ? $(id).value.trim() : "");
-  const person = val("apName").replace(/\s+/g, " ");
-  if (!person) return err("Enter the patient's name.");
-  const dup = liveCards().find(c => samePerson(c.person) === samePerson(person));
-  if (dup) return err(`You already have a patient named ${dup.person}.`);
-  const shared = memberCards.find(c => samePerson(c.person) === samePerson(person));
-  if (shared) return err(`${ownerName(shared.owner)} already shares a card for ${shared.person} with you.`);
-  const dob = val("apDob");
-  if (dob && (!/^\d{4}-\d\d-\d\d$/.test(dob) || parseDate(dob) > new Date() || dob < "1900-01-01")) return err("Enter a date of birth that isn't in the future.");
-  const email = val("apEmail").toLowerCase();
-  if (email && !emailOk(email)) return err("Enter the patient's full email address, like name@example.com.");
-  let phone = val("apPhone");
-  if (phone) { phone = normPhone(phone); if (phone === null) return err("Enter the patient's phone number with its area code, like 317-555-0123."); }
-  const same = $("apSameYes").checked;
-  if (!same && !$("apSameNo").checked) return err("Is the patient also the client? Pick Yes or No.");
-  if (same && !email) return err("Enter the patient's email, so they can set up their client account.");
-  const clientEmail = same ? email : val("apClientEmail").toLowerCase();
-  if (!same && !emailOk(clientEmail)) return err("Enter the client's full email address, like name@example.com.");
-  const c = { person, birthDate: dob || null, address: val("apAddress"), email, phone, notes: val("apNotes"), payerSame: same, payerRel: same ? "Self" : "" };
-  acctUi.patBusy = true; acctUi.patErr = ""; if ($("apSave")) { $("apSave").disabled = true; $("apSave").textContent = "Saving…"; }
-
-  // Already in Care Hours: ask that patient's client.
-  const asked = await requestPatient(c);
-  if (asked === "requested" || asked === "already") {
-    let notice = asked === "already"
-      ? `You've already asked to be added to ${person}. You'll see ${person} once ${person}'s client approves.`
-      : `${person} is already in Care Hours, so ${person}'s client has been asked to approve adding you.`;
-    if (asked === "requested") {
-      const r = await notifyEmail({ action: "request", person });
-      notice += r && r.sent === "notice" ? " We emailed them too." : " They'll see it the next time they open Care Hours.";
-    }
-    acctUi = { ...acctUi, pat: null, patBusy: false, notice };
-    await loadCardSharing();
-    renderAll(); renderAccount(true);
-    return;
-  }
-
-  const cl = same ? { name: person, address: c.address, email, phone } : { name: "", address: "", email: clientEmail, phone: "" };
-  const client = await resolveClient(null, cl);
-  if (client.error) return err(client.error);
-  c.clientId = client.id;
-  const old = pcards.find(x => x.id === cardId(person) && x.deleted);   // a patient removed earlier and added again gets their old card back
-  const id = old ? old.id : freshCardId(person);
-  putCard({ ...(old || {}), ...c, id, deleted: false, updatedAt: old ? old.updatedAt : 0 });
-  acctUi = { ...acctUi, pat: null, patBusy: false, notice: `${person} is added.` };
-  renderAll(); renderAccount(true);
-  acctUi.notice = `${person} is added. ` + await inviteClient(person, clientEmail);
-  pcUi.notice = "";   // said here instead
-  renderAll(); renderAccount(true);
-}
 // Shares the patient with their client, then emails the client to set up their account. Returns what happened.
 async function inviteClient(person, email) {
   if (!email || email === (me.email || "").toLowerCase()) return "";
