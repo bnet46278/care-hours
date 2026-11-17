@@ -110,7 +110,16 @@ document.addEventListener("click", e => {
 // The tab shows the cards. "+ New patient" next to a picker on another tab opens just the form there.
 const peopleTab = () => view === "people" || view === "ppeople";
 function patientsCardShown() { return peopleTab() || (pcUi.isNew && !!pcUi.returnTo); }
+// Background updates (sync, messages) redraw the cards. Someone typing a caregiver's email keeps what
+// they typed (it's saved as they type) and their place in the box.
 function renderPatients() {
+  const a = document.activeElement, inInvite = a && a.id === "pcInviteEmail";
+  const caret = inInvite ? a.selectionStart : null;
+  drawPatients();
+  const box = $("pcInviteEmail");
+  if (inInvite && box && box !== a) { box.focus({ preventScroll: true }); if (caret !== null) box.setSelectionRange(caret, caret); }
+}
+function drawPatients() {
   const el = $("patientsCard");
   if (!el) return;
   el.hidden = !patientsCardShown();
@@ -154,11 +163,12 @@ function wireCards(el) {
   el.querySelectorAll("[data-pc]").forEach(b => b.addEventListener("click", () => {
     const k = b.dataset.pc;
     pcUi = { ...pcUi, open: pcUi.open === k && !pcUi.edit ? null : k, edit: false, isNew: false, confirmDel: false, err: "", notice: "",
-      memberErr: "", memberOk: "", confirmMember: null, confirmLeave: false };
+      memberErr: "", memberOk: "", inviteEmail: "", confirmMember: null, confirmLeave: false };
     renderPatients();
   }));
   // Caregivers on a card.
   if ($("pcInvite")) $("pcInvite").addEventListener("submit", inviteCaregiver);
+  if ($("pcInviteEmail")) $("pcInviteEmail").addEventListener("input", e => { pcUi.inviteEmail = e.target.value; });
   el.querySelectorAll("[data-pc-unmember]").forEach(b => b.addEventListener("click", () => { pcUi.confirmMember = b.dataset.pcUnmember; renderPatients(); }));
   el.querySelectorAll("[data-pc-unmember-no]").forEach(b => b.addEventListener("click", () => { pcUi.confirmMember = null; renderPatients(); }));
   el.querySelectorAll("[data-pc-unmember-yes]").forEach(b => b.addEventListener("click", () => removeCaregiver(b.dataset.pcUnmemberYes)));
@@ -218,7 +228,7 @@ function renderCaregivers(el) {
   el.querySelectorAll("[data-cg]").forEach(b => b.addEventListener("click", () => {
     const id = b.dataset.cg;
     pcUi = { ...pcUi, openCg: openId === id ? null : id, open: null, edit: false, confirmDel: false, err: "", notice: "",
-      memberErr: "", memberOk: "", confirmMember: null, confirmLeave: false };
+      memberErr: "", memberOk: "", inviteEmail: "", confirmMember: null, confirmLeave: false };
     renderPatients();
   }));
   wireCards(el);

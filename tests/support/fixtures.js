@@ -168,6 +168,8 @@ class CareHours {
   // Payers see their caregivers first: open the caregiver (or the one caring for that patient), then the card.
   async openCard(name, caregiver) {
     await this.openPatients();
+    // Wait for the cards: right after a reload, a payer's list of caregivers can still be loading.
+    await expect(this.$(".pcard").filter({ hasText: name }).first()).toBeVisible();
     if (await this.$(".cgcard").count()) {
       const cg = this.$(".cgcard").filter({ hasText: caregiver || name }).first().locator(":scope > .prow");
       if ((await cg.getAttribute("aria-expanded")) !== "true") await cg.click();
