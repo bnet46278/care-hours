@@ -100,6 +100,7 @@ test.describe("Shifts on this device only", () => {
     const app = await openApp({ sync: false });
     await app.addShift({ date: "2026-11-02", start: "09:00", end: "12:00", patient: "Mom", note: "walk, then lunch" });
     await app.addShift({ date: "2026-11-03", start: "22:00", end: "06:30", patient: "Mom" });
+    await app.addPatient({ name: "Dad", client: { name: "Pat P.", rel: "Son" } });   // Mom has no client
     await app.addShift({ date: "2026-11-04", start: "13:00", end: "15:15", patient: "Dad", note: "doctor visit" });
     const pdf = await app.downloadPdf();
     expect(pdf.name).toBe("care-hours-week-of-2026-11-02.pdf");
@@ -108,7 +109,7 @@ test.describe("Shifts on this device only", () => {
     const text = pdfText(pdf.bytes);
     expect(text.split("\n")).toEqual(["Care Hours timesheet", "Patient: All patients", "Dates: Mon, Nov 2, 2026 to Sun, Nov 8, 2026",
       "Date", "Time", "Hours", "Notes",
-      "Dad",
+      "Dad   \xb7   Client: Pat P.",
       "Wed, Nov 4, 2026", "1:00 PM \x96 3:15 PM", "2.25", "doctor visit",
       "Total for Dad", "2.25",
       "Mom",
@@ -121,9 +122,14 @@ test.describe("Shifts on this device only", () => {
     // Just one patient: their name at the top, and no per-patient totals.
     await app.page.locator("#myPatient").selectOption({ label: "Dad" });
     const one = pdfText((await app.downloadPdf()).bytes);
-    expect(one).toContain("Patient: Dad");
+    expect(one).toContain("Patient: Dad\nClient: Pat P.\nDates:");
     expect(one).toContain("Total for Dad");
     expect(one).not.toContain("Mom");
+    // Mom has no client: no client line.
+    await app.page.locator("#myPatient").selectOption({ label: "Mom" });
+    const mom = pdfText((await app.downloadPdf()).bytes);
+    expect(mom).toContain("Patient: Mom\nDates:");
+    expect(mom).not.toContain("Client");
   });
 
   test("without internet the first time, the PDF explains why it couldn't be made", async ({ openApp }) => {

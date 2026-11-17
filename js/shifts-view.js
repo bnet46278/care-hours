@@ -459,18 +459,27 @@ function loadPdfLibs() {
   if (!pdfLibs) pdfLibs = PDF_LIBS.reduce((p, src) => p.then(() => one(src)), Promise.resolve()).catch(e => { pdfLibs = null; throw e; });
   return pdfLibs;
 }
+// The client (the person who pays) on a patient's card, if it has one.
+function clientNameOf(person) {
+  const k = samePerson(person);
+  const c = [...liveCards(), ...memberCards, ...sharedCards].find(x => samePerson(x.person) === k);
+  const cl = c && clientOf(c);
+  return cl && cl.name ? cl.name : "";
+}
 // A timesheet: who and when at the top; then each patient's shifts (date, time, hours and notes) under their
-// name, with their total; then, for payers with more than one caregiver, each caregiver's total; and the total.
+// name and their client's, with their total; then, for payers with more than one caregiver, each caregiver's total; and the total.
 async function downloadPdf() {
   await loadPdfLibs();
   const { R, rows, ro, file } = exportData();
   const doc = new window.jspdf.jsPDF({ unit: "pt", format: "letter" });
   const fullDate = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
   const last = addDays(R.end, -1);
+  const onlyPatient = !ro && myPatient !== "all" ? myPatientName() : new Set(rows.map(patientName)).size === 1 ? patientName(rows[0]) : "";
   const lines = [
     ro ? `Caregiver: ${sharedCaregiver === "all" ? "All caregivers" : cgName(sharedCaregiver)}`
       : (profile && profile.display_name) || (me && me.email) ? `Caregiver: ${(profile && profile.display_name) || me.email}` : "",
-    `Patient: ${!ro && myPatient !== "all" ? myPatientName() : new Set(rows.map(patientName)).size === 1 ? patientName(rows[0]) : "All patients"}`,
+    `Patient: ${onlyPatient || "All patients"}`,
+    onlyPatient && clientNameOf(onlyPatient) ? `Client: ${clientNameOf(onlyPatient)}` : "",
     `Dates: ${fullDate.format(R.start)} to ${fullDate.format(last)}`,
   ].filter(Boolean);
   doc.setFontSize(18); doc.text("Care Hours timesheet", 40, 50);
@@ -484,7 +493,8 @@ async function downloadPdf() {
   for (const s of rows) { const p = patientName(s); if (!groups.has(p)) groups.set(p, []); groups.get(p).push(s); }
   const body = [];
   for (const [p, list] of [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
-    body.push([{ content: p, colSpan: cols, styles: { fontStyle: "bold", fontSize: 11, textColor: 20, fillColor: [214, 232, 227] } }]);
+    const cl = clientNameOf(p);
+    body.push([{ content: cl ? `${p}   ·   Client: ${cl}` : p, colSpan: cols, styles: { fontStyle: "bold", fontSize: 11, textColor: 20, fillColor: [214, 232, 227] } }]);
     for (const s of list) body.push([fullDate.format(new Date(s.start)), ...(ro ? [cgName(s.owner)] : []),
       `${tFmt.format(new Date(s.start))} – ${tFmt.format(new Date(s.end))}`, hoursOf(s).toFixed(2), s.note || ""]);
     body.push(sumRow(`Total for ${p}`, list.reduce((t, s) => t + hoursOf(s), 0), [245, 248, 247]));
