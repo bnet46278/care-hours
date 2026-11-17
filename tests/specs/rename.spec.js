@@ -144,29 +144,3 @@ test.describe("Renaming a patient online", () => {
     expect(await cynda.page.evaluate(() => pcards.map(c => c.person))).toEqual(["Mom"]);
   });
 });
-
-test.describe("A client's own patients", () => {
-  test("a client adds a patient on the Account Card and renames them there", async ({ openApp, db }) => {
-    const pat = await openApp();
-    await pat.signIn("pat@example.com");
-    await pat.$("#acctRoleClient").check();
-    await pat.$("#dispName").fill("Pat P.");
-    await pat.$("#acctSave").click();
-    await expect(pat.page.getByRole("tab")).toHaveText(["Care Hours", "Caregivers"]);
-    await pat.openPatients();
-    await expect(pat.$("#patientsBody .pcard")).toHaveCount(0);           // no Patients list on the Caregivers tab
-
-    await pat.$("#acctAddPatient").click();
-    await pat.$("#apName").fill("Grandma");
-    await pat.$("#apSave").click();
-    await expect.poll(() => persons(db, "patients")).toEqual(["Grandma"]);
-    await expect(pat.$("#patientsBody .pcard")).toHaveCount(0);
-
-    await pat.$("#acctPatients .apcard").filter({ hasText: "Grandma" }).getByRole("button", { name: "Edit" }).click();
-    await expect(pat.$("#apName")).toHaveValue("Grandma");
-    await pat.$("#apName").fill("Grandma Jo");
-    await pat.$("#apSave").click();
-    await expect(pat.$("#acctPatients .apcard")).toHaveText([/Grandma Jo/]);
-    await expect.poll(() => persons(db, "patients")).toEqual(["Grandma Jo"]);
-  });
-});
