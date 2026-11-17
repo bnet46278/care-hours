@@ -1,0 +1,60 @@
+# Raises VERSION in sw.js by one each time app files reach the main branch (for example when a pull request is
+# merged), so phones replace their saved offline copy of the app. Changes to only tests, the READMEs, setup.sql
+# or this folder don't raise it, and neither does a push that already changed VERSION by hand.
+name: Bump app version
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "tests/**"
+      - "**/*.md"
+      - "setup.sql"
+      - ".github/**"
+
+permissions:
+  contents: write   # to push the new VERSION
+  pages: write      # to ask GitHub Pages to publish it
+
+concurrency:
+  group: bump-version
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Raise VERSION in sw.js
+        id: bump
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          # Already raised by hand in this push: leave it.
+          if git cat-file -e "$BEFORE^{commit}" 2>/dev/null && git diff "$BEFORE" HEAD -- sw.js | grep -q '^[-+]const VERSION'; then
+            echo "VERSION was already changed in this push."
+            exit 0
+          fi
+          n=$(grep -oE 'const VERSION = "care-hours-v[0-9]+"' sw.js | grep -oE '[0-9]+' || true)
+          if [ -z "$n" ]; then echo "Couldn't find VERSION in sw.js" >&2; exit 1; fi
+          next=$((n + 1))
+          sed -i "s/const VERSION = \"care-hours-v$n\"/const VERSION = \"care-hours-v$next\"/" sw.js
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -qam "Bump VERSION to care-hours-v$next"
+          # Someone else may have pushed in the meantime: put this on top and try again.
+          for i in 1 2 3; do
+            git push origin HEAD:main && echo "pushed=true" >> "$GITHUB_OUTPUT" && exit 0
+            git pull --rebase origin main
+          done
+          exit 1
+
+      - name: Publish to GitHub Pages
+        if: steps.bump.outputs.pushed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # A push made by this workflow doesn't always start a Pages build by itself.
+        run: gh api -X POST "repos/${{ github.repository }}/pages/builds" || echo "Pages will publish on the next push."
