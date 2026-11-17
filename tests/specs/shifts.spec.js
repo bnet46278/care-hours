@@ -1,5 +1,8 @@
 // Logging shifts on one device, with online sync turned off.
 const { test, expect } = require("../support/fixtures");
+// The text drawn in a PDF made by the app (its pages aren't compressed): every "(...) Tj", joined by new lines.
+const pdfText = bytes => [...bytes.toString("latin1").matchAll(/\(((?:\\.|[^\\)])*)\)\s*Tj/g)]
+  .map(m => m[1].replace(/\\([()\\])/g, "$1")).filter(t => t.trim()).join("\n");
 
 test.describe("Shifts on this device only", () => {
   test("a patient is required to clock in or add a shift", async ({ openApp }) => {
@@ -80,6 +83,57 @@ test.describe("Shifts on this device only", () => {
       "2026-11-03,10:00 PM,6:30 AM,8.50,Mom,",
       "Total,,,11.50,,",
     ]);
+  });
+
+  test("Download asks for CSV or PDF, and can be cancelled", async ({ openApp }) => {
+    const app = await openApp({ sync: false });
+    await expect(app.$("#csvBtn")).toHaveText("Download");
+    await expect(app.$("#dlPick")).toBeHidden();
+    await app.$("#csvBtn").click();
+    await expect(app.$("#dlPick")).toBeVisible();
+    await expect(app.$("#dlPick button")).toHaveText(["CSV", "PDF", "Cancel"]);
+    await app.$("#dlCancel").click();
+    await expect(app.$("#dlPick")).toBeHidden();
+  });
+
+  test("the PDF groups shifts by patient, with each one's date, time, hours and notes, a total for each patient, and the total", async ({ openApp }) => {
+    const app = await openApp({ sync: false });
+    await app.addShift({ date: "2026-11-02", start: "09:00", end: "12:00", patient: "Mom", note: "walk, then lunch" });
+    await app.addShift({ date: "2026-11-03", start: "22:00", end: "06:30", patient: "Mom" });
+    await app.addShift({ date: "2026-11-04", start: "13:00", end: "15:15", patient: "Dad", note: "doctor visit" });
+    const pdf = await app.downloadPdf();
+    expect(pdf.name).toBe("care-hours-week-of-2026-11-02.pdf");
+    expect(pdf.bytes.subarray(0, 5).toString()).toBe("%PDF-");
+    // Grouped by patient (alphabetically), each with their total, then the total for everyone.
+    const text = pdfText(pdf.bytes);
+    expect(text.split("\n")).toEqual(["Care Hours timesheet", "Patient: All patients", "Dates: Mon, Nov 2, 2026 to Sun, Nov 8, 2026",
+      "Date", "Time", "Hours", "Notes",
+      "Dad",
+      "Wed, Nov 4, 2026", "1:00 PM \x96 3:15 PM", "2.25", "doctor visit",
+      "Total for Dad", "2.25",
+      "Mom",
+      "Mon, Nov 2, 2026", "9:00 AM \x96 12:00 PM", "3.00", "walk, then lunch",
+      "Tue, Nov 3, 2026", "10:00 PM \x96 6:30 AM", "8.50",
+      "Total for Mom", "11.50",
+      "Total hours", "13.75"]);
+    await expect(app.$("#dlPick")).toBeHidden();
+
+    // Just one patient: their name at the top, and no per-patient totals.
+    await app.page.locator("#myPatient").selectOption({ label: "Dad" });
+    const one = pdfText((await app.downloadPdf()).bytes);
+    expect(one).toContain("Patient: Dad");
+    expect(one).toContain("Total for Dad");
+    expect(one).not.toContain("Mom");
+  });
+
+  test("without internet the first time, the PDF explains why it couldn't be made", async ({ openApp }) => {
+    const app = await openApp({ sync: false });
+    await app.page.route("https://cdn.jsdelivr.net/npm/jspdf@*/**", r => r.abort());
+    await app.$("#csvBtn").click();
+    await app.$("#dlPdf").click();
+    await expect(app.$("#dlErr")).toHaveText("Couldn't make the PDF. Check your internet connection and try again.");
+    await expect(app.$("#dlPdf")).toHaveText("PDF");
+    await expect(app.$("#dlPdf")).toBeEnabled();
   });
 
   test("shifts saved by the first version of the app still load", async ({ openApp }) => {

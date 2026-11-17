@@ -100,8 +100,15 @@
       <button type="button" class="collapse inline" id="listToggle" aria-expanded="true" aria-controls="list"><h2>Worked</h2><span class="chev" aria-hidden="true"></span></button>
       <div class="tools">
         <button class="ghost" id="addBtn">+ Add a missed shift</button>
-        <button class="ghost" id="csvBtn">Download week (CSV)</button>
+        <button class="ghost" id="csvBtn" aria-expanded="false" aria-controls="dlPick">Download</button>
       </div>
+    </div>
+    <div class="dlpick" id="dlPick" role="group" aria-label="Download as" hidden>
+      <span class="label">Download as</span>
+      <button type="button" class="ghost" id="dlCsv">CSV</button>
+      <button type="button" class="ghost" id="dlPdf">PDF</button>
+      <button type="button" class="link" id="dlCancel">Cancel</button>
+      <span class="err" id="dlErr" role="alert"></span>
     </div>
     <div id="formSlot"></div>
     <div id="list"></div>
