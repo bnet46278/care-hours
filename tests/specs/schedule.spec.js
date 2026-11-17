@@ -21,6 +21,38 @@ test.describe("Schedule", () => {
     await expect(app.$("#planList")).toContainText("Nothing scheduled this week.");
   });
 
+  test("a scheduled shift whose time is over can be marked worked, which logs it", async ({ openApp }) => {
+    const app = await openApp({ sync: false });
+    await weekWithTimeOff(app);
+    const occ = text => app.$("#planList .occ").filter({ hasText: text });
+    const mon = occ("9:00 AM").first(), wedEvening = occ("9:00 PM");   // Mon 9-1 (over); Wed 9-10:30 PM (not yet)
+    await expect(mon.getByRole("button", { name: "Mark worked" })).toBeVisible();
+    await expect(wedEvening.getByRole("button", { name: "Mark worked" })).toHaveCount(0);   // still to come
+    await expect(occ("Time off").first().getByRole("button", { name: "Mark worked" })).toHaveCount(0);
+    await expect(app.$("#planList").getByRole("button", { name: "Mark worked" })).toHaveCount(2);   // Mon and Wed mornings
+
+    await mon.getByRole("button", { name: "Mark worked" }).click();
+    await expect(mon).toContainText("Worked ✓");
+    await expect(mon.getByRole("button", { name: "Mark worked" })).toHaveCount(0);
+    await expect(mon.getByRole("button", { name: "Skip this day" })).toHaveCount(0);
+    const logged = await app.page.evaluate(() => shifts.map(s => ({ person: s.person, start: new Date(s.start).toString().slice(0, 21), end: new Date(s.end).toString().slice(16, 21) })));
+    expect(logged).toEqual([{ person: "Mom", start: "Mon Nov 02 2026 09:00", end: "13:00" }]);
+    await app.show("worked");
+    await expect(app.weekTotal()).toHaveText("4h 00m");
+    await expect(app.shiftRows()).toHaveCount(1);
+
+    // A shift logged another way (here, added by hand) also marks it worked.
+    await app.addShift({ date: "2026-11-04", start: "09:30", end: "12:00", patient: "Mom" });
+    await app.show("schedule");
+    await expect(occ("9:00 AM")).toHaveCount(3);   // Mon, Wed, and Friday's (on time off)
+    await expect(occ("9:00 AM").nth(1)).toContainText("Worked ✓");
+    await expect(app.$("#planList").getByRole("button", { name: "Mark worked" })).toHaveCount(0);
+
+    // Deleting the worked shift brings the button back.
+    await app.page.evaluate(() => remove(shifts.find(s => new Date(s.start).getDate() === 2).id));
+    await expect(occ("9:00 AM").first().getByRole("button", { name: "Mark worked" })).toBeVisible();
+  });
+
   test("the forms explain what's missing", async ({ openApp }) => {
     const app = await openApp({ sync: false });
     await app.show("schedule");

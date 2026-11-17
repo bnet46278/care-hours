@@ -19,10 +19,14 @@ function occRow(o, d, ro) {
     const en = new Date(o.end);
     range = `${tFmt.format(new Date(o.start))} – ${tFmt.format(en)}${!sameDay(new Date(o.start), en) ? " (next day)" : ""}`;
     const pname = ro ? patientName({ person: o.person }) : o.person;
+    const worked = !ro && !o.cancelled && workedFor(o);
     meta = [ro ? patientTag(pname) : `<span class="dot"></span><b>${esc(pname)}</b>`, ro && caregiverTag(o.owner, "by "), !ro && (e.kind === "weekly" ? `Repeats ${esc(daysLabel(e.days))}` : "One time"),
-      o.cancelled && `<span class="pill">${ro ? "Caregiver unavailable" : "Time off"}</span>`, e.note && esc(e.note)].filter(Boolean).join(" · ");
+      o.cancelled && `<span class="pill">${ro ? "Caregiver unavailable" : "Time off"}</span>`, worked && `<span class="pill done">Worked ✓</span>`, e.note && esc(e.note)].filter(Boolean).join(" · ");
     if (o.cancelled) cls += " cancel";
-    if (!ro) acts = (e.kind === "weekly" && !o.cancelled ? `<button class="link" data-pact="skip" data-id="${esc(e.id)}" data-start="${o.start}" data-end="${o.end}">Skip this day</button>` : "")
+    // Once its time is over, a scheduled shift that wasn't logged can be logged as worked in one tap.
+    const canMark = !ro && !o.cancelled && !worked && o.end <= Date.now();
+    if (!ro) acts = (canMark ? `<button class="link" data-pact="worked" data-start="${o.start}" data-end="${o.end}" data-person="${esc(o.person)}">Mark worked</button>` : "")
+      + (e.kind === "weekly" && !o.cancelled && !worked ? `<button class="link" data-pact="skip" data-id="${esc(e.id)}" data-start="${o.start}" data-end="${o.end}">Skip this day</button>` : "")
       + `<button class="link" data-pact="edit" data-id="${esc(e.id)}">${e.kind === "weekly" ? "Edit series" : "Edit"}</button>
       <button class="link danger" data-pact="del" data-id="${esc(e.id)}">Delete</button>`;
   }
@@ -34,6 +38,11 @@ function occRow(o, d, ro) {
   else if (o.kind !== "off") cls += " tinted" + pc(o.person);
   return `<div class="${cls}"><div class="range">${range}</div><div class="dur">${o.kind === "off" ? "" : dur(o.end - o.start)}</div>
     <div class="meta">${meta}</div><div class="acts">${acts}</div>${confirm}</div>`;
+}
+// A scheduled shift counts as worked when a logged shift for that patient overlaps it (clocked in, added, or marked).
+function workedFor(o) {
+  const k = samePerson(o.person);
+  return mine().some(s => samePerson(s.person) === k && s.start < o.end && endOf(s) > o.start);
 }
 // The week's schedule, day by day.
 function scheduleDays(ro) {
@@ -93,6 +102,10 @@ $("planList").addEventListener("click", e => {
   else if (act === "del-no") { planConfirm = null; renderPlan(); }
   else if (act === "del-yes") { planConfirm = null; removeSched(id); }
   else if (act === "edit") { const en = liveSched().find(x => x.id === id); if (en) openPlanForm(en.kind, en); }
+  else if (act === "worked") {
+    // A worked shift with the scheduled patient and times. It can be edited under Worked (for example, a late finish).
+    put({ id: newId(), start: Number(b.dataset.start), end: Number(b.dataset.end), person: matchPatient(b.dataset.person), note: "" });
+  }
   else if (act === "skip") {
     // Skipping one day of a repeating shift is time off for exactly that shift.
     const a = new Date(Number(b.dataset.start)), z = new Date(Number(b.dataset.end));
