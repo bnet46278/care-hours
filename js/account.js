@@ -228,7 +228,7 @@ function wirePatients(el) {
   }));
   el.querySelectorAll("[data-ap-open]").forEach(b => b.addEventListener("click", () => {
     // The full card, on the Patients tab.
-    view = "people"; pcUi = { ...pcUi, open: b.dataset.apOpen, openWhere: "", edit: false, isNew: false, notice: "" };
+    view = "people"; pcUi = { ...pcUi, open: b.dataset.apOpen, edit: false, isNew: false, notice: "" };
     renderAll(); $("patientsCard").scrollIntoView({ block: "start", behavior: "smooth" });
   }));
   el.querySelectorAll("[data-ap-del]").forEach(b => b.addEventListener("click", () => { acctUi.confirmDel = b.dataset.apDel; renderAccount(true); }));
