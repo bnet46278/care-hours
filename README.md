@@ -108,6 +108,8 @@ If you change `setup.sql` (or pull a new version of it), run the whole file agai
 
 Version 4 of `setup.sql` adds messages and mobile numbers. Until you run it, the app works as before and the cards show no Messages section.
 
+Version 10 lets a patient's name be changed. The caregiver who set up the card, a caregiver on it, or the patient's client renames the patient for everyone on the card at once: the card, and their shifts, schedule and shares. Until you run it, everything else works, but changing a name asks for the latest setup.sql.
+
 Version 9 adds the Account Card's address and the Caregiver / Client choice. Until you run it, a name and phone still save, but saving an address or picking Caregiver or Client asks for the latest setup.sql.
 
 Version 8 adds Client Details to the patient cards: clients as their own records, and requests to be added to a patient who's already in Care Hours. It turns the payer details already on each card into a client record. Until you run it, cards still sync, but clients aren't shared between caregivers and requests can't be sent.

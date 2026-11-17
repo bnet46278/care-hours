@@ -38,9 +38,9 @@ test.describe("Patients tab", () => {
     await expect(d.getByRole("link", { name: "mom@example.com" })).toBeVisible();
     await expect(lineIn(d, "Notes")).toContainText("Allergic to penicillin. Door code 4321.");
 
-    // Edit; the patient's name can't be changed here.
+    // Edit: everything can be changed, the name too (see the renaming tests).
     await d.getByRole("button", { name: "Edit" }).click();
-    await expect(app.$("#pcName")).toHaveCount(0);
+    await expect(app.$("#pcName")).toHaveValue("Mom");
     await expect(app.$("#pcClientName")).toHaveValue("Pat P.");
     await app.$("#pcNotes").fill("Allergic to penicillin.");
     await app.$("#pcClientAddress").fill("10 Oak Ave");
@@ -243,14 +243,15 @@ test.describe("Patients online", () => {
     await expect(pat.page.getByRole("tab")).toHaveText(["Care Hours", "Caregivers"]);
     await pat.openPatients();
     await expect(pat.$("#patientsCard h2").first()).toHaveText("Caregivers");
-    await expect(pat.$("#addPatient")).toHaveCount(0);   // clients don't add patients
-    await expect(pat.$(".pcard:not(.cgcard)").filter({ hasText: "Mom" })).toContainText("Cynda B.'s card");
+    await expect(pat.$("#addPatient")).toHaveCount(0);   // clients add patients from their own Patients list instead
+    await expect(pat.$(".cgcard .pcard").filter({ hasText: "Mom" })).toContainText("Cynda B.'s card");
+    await expect(pat.$("#cpList .pcard").filter({ hasText: "Mom" })).toContainText("Cynda B.'s card");   // and in the client's Patients list
     await pat.openCard("Mom");
     await expect(pat.$("#pcDetails")).toContainText("Door code 4321");
     await expect(pat.page.getByRole("button", { name: "Remove patient" })).toHaveCount(0);
 
     await pat.$("#pcDetails").getByRole("button", { name: "Edit" }).click();
-    await expect(pat.$("#pcName")).toHaveCount(0);
+    await expect(pat.$("#pcName")).toHaveValue("Mom");
     await pat.$("#pcNotes").fill("Door code changed to 9876.");
     await pat.$("#pcClientAddress").fill("22 New St");
     await pat.$("#pcSave").click();
@@ -375,7 +376,8 @@ test.describe("Clients already in Care Hours", () => {
     const pat = await openApp();
     await pat.signIn("pat@example.com");
     await pat.openPatients();
-    await expect(pat.$(".pcard")).toHaveCount(2);
+    await expect(pat.$(".cgcard")).toHaveCount(2);
+    await expect(pat.$("#cpList .pcard .pname b")).toHaveText(["Grandpa", "Mom"]);   // and both in Pat's Patients list
   });
 
   test("the same caregiver's second patient for that client uses the same client", async ({ openApp, db }) => {

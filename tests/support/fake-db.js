@@ -16,6 +16,8 @@
 //     patient card and the client themselves; adding a patient who's already in Care Hours makes a request
 //     that only the patient's client can approve (version 8)
 //   * profiles have an address and a role ('', 'caregiver' or 'client') (version 9)
+//   * rename_patient renames a patient for everyone on the card: the card, and the shifts, schedule and shares
+//     of its caregivers; allowed for those caregivers and the patient's client or payer (version 10)
 //   * signed-out visitors get nothing
 const { randomUUID } = require("crypto");
 
@@ -30,8 +32,8 @@ const UPDATE_COLS = { messages: ["read_at"] };
 
 class FakeDb {
   // now: the time the database clock starts at (each new row is a second later than the last).
-  // version: acts like a database set up with that version of setup.sql (8: no address or role on profiles; 7: no client records; 6: no shared patient cards; 5: no patient cards; 4: also no week holding; 3: also no messages or phone numbers).
-  constructor({ now = Date.now(), version = 9 } = {}) {
+  // version: acts like a database set up with that version of setup.sql (9: no rename_patient; 8: no address or role on profiles; 7: no client records; 6: no shared patient cards; 5: no patient cards; 4: also no week holding; 3: also no messages or phone numbers).
+  constructor({ now = Date.now(), version = 10 } = {}) {
     this.version = version;
     this.users = new Map();   // email -> id
     this.tables = { shifts: [], schedule: [], shares: [], profiles: [], messages: [], patients: [], patient_members: [], clients: [], patient_requests: [] };
@@ -100,6 +102,29 @@ class FakeDb {
         out.set(p.owner, { owner: p.owner, name: pr.display_name || this.emailOf(p.owner) });
       }
     return [...out.values()];
+  }
+  // rename_patient() from setup.sql (version 10)
+  renamePatient({ the_owner, the_id, the_old, the_new }, me) {
+    const no = { data: null, error: { code: "42501", message: "Not allowed" } };
+    const nm = String(the_new || "").replace(/\s+/g, " ").trim(), was = samePerson(the_old);
+    if (!was) return no;
+    if (nm.length < 1 || nm.length > 100) return { data: null, error: { code: "23514", message: "Enter a name up to 100 characters" } };
+    if (the_owner !== me.id && !this.tables.patients.some(p => p.owner === the_owner && p.id === the_id && !p.deleted && samePerson(p.person) === was)) return no;
+    if (!this.canAddCaregiver(the_owner, the_id, me)) return no;
+    const cgs = new Set([the_owner, ...this.tables.patient_members.filter(m => m.owner === the_owner && m.id === the_id && this.users.has(m.member_email))
+      .map(m => this.users.get(m.member_email))]);
+    if (samePerson(nm) !== was && this.tables.patients.some(p => cgs.has(p.owner) && !p.deleted && samePerson(p.person) === samePerson(nm)))
+      return { data: null, error: { code: "23505", message: "Another patient already has that name" } };
+    const at = this.stamp();
+    for (const p of this.tables.patients) if (cgs.has(p.owner) && !p.deleted && samePerson(p.person) === was) Object.assign(p, { person: nm, updated_at: at });
+    for (const r of this.tables.shifts) if (cgs.has(r.owner) && samePerson(r.person) === was) Object.assign(r, { person: nm, updated_at: at });
+    for (const r of this.tables.schedule) if (cgs.has(r.owner) && r.kind !== "off" && samePerson(r.person) === was) Object.assign(r, { person: nm, updated_at: at });
+    if (samePerson(nm) !== was) this.tables.shares = this.tables.shares.filter(n => !(cgs.has(n.owner) && samePerson(n.person) === samePerson(nm) &&
+      this.tables.shares.some(o => o.owner === n.owner && o.viewer_email === n.viewer_email && samePerson(o.person) === was)));
+    for (const r of this.tables.shares) if (cgs.has(r.owner) && samePerson(r.person) === was) r.person = nm;
+    for (const r of this.tables.patient_requests) if (r.owner === the_owner && r.id === the_id) r.person = nm;
+    for (const t of ["patients", "shifts", "schedule", "shares", "patient_requests"]) this.changed(t);
+    return { data: nm, error: null };
   }
   // shift_released() from setup.sql
   released(owner, startAt) {
@@ -221,6 +246,7 @@ class FakeDb {
             p.birth_date === the_birth && p.phone === String(the_phone).trim());
         return { data: ok, error: null };
       }
+      if (q.name === "rename_patient" && this.version >= 10) return this.renamePatient(q.args || {}, me);
       if (q.name === "my_contacts" && this.version >= 4) return { data: this.contacts(me), error: null };
       return { data: null, error: { code: "PGRST202", message: `Could not find the function public.${q.name}` } };
     }

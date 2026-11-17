@@ -200,7 +200,7 @@ function patientForm(c, cg) {
   const f = (id, label, val, attrs = "") => `<div class="field"><label class="label" for="${id}">${label}</label><input id="${id}" value="${esc(val || "")}" ${attrs}></div>`;
   return `<form class="form pcform" id="apForm" novalidate>
     <h3>${c ? `Edit ${esc(c.person)}` : "New patient"}</h3>
-    ${c ? "" : f("apName", "Name", v.person, 'autocomplete="off" maxlength="100"')}
+    ${f("apName", "Name", v.person, 'autocomplete="off" maxlength="100"')}
     <div class="field"><label class="label" for="apDob">Date of birth</label>
       <div class="inline"><input id="apDob" type="date" value="${esc(v.birthDate || "")}" max="${dateVal(new Date())}"><span class="hint" id="apAge">${age !== null ? `Age ${age}` : ""}</span></div></div>
     <div class="field"><label class="label" for="apAddress">Address</label><textarea id="apAddress" rows="2" maxlength="500">${esc(v.address || "")}</textarea></div>
@@ -224,11 +224,11 @@ function wirePatients(el) {
     acctUi = { ...acctUi, pat: "new", patErr: "", confirmDel: null }; renderAccount(true); $("apName").focus();
   });
   el.querySelectorAll("[data-ap-edit]").forEach(b => b.addEventListener("click", () => {
-    acctUi = { ...acctUi, pat: b.dataset.apEdit, patErr: "", confirmDel: null }; renderAccount(true); $("apDob").focus();
+    acctUi = { ...acctUi, pat: b.dataset.apEdit, patErr: "", confirmDel: null }; renderAccount(true); $("apName").focus();
   }));
   el.querySelectorAll("[data-ap-open]").forEach(b => b.addEventListener("click", () => {
     // The full card, on the Patients tab.
-    view = "people"; pcUi = { ...pcUi, open: b.dataset.apOpen, edit: false, isNew: false, notice: "" };
+    view = "people"; pcUi = { ...pcUi, open: b.dataset.apOpen, openWhere: "", edit: false, isNew: false, notice: "" };
     renderAll(); $("patientsCard").scrollIntoView({ block: "start", behavior: "smooth" });
   }));
   el.querySelectorAll("[data-ap-del]").forEach(b => b.addEventListener("click", () => { acctUi.confirmDel = b.dataset.apDel; renderAccount(true); }));
@@ -250,10 +250,12 @@ async function saveMyPatient(ev) {
   const err = m => { acctUi.patErr = m; acctUi.patBusy = false; $("apErr").textContent = m; if ($("apSave")) { $("apSave").disabled = false; $("apSave").textContent = "Save patient"; } };
   const val = id => ($(id) ? $(id).value.trim() : "");
   const prev = acctUi.pat && acctUi.pat !== "new" ? pcards.find(x => x.id === acctUi.pat && !x.deleted) : null;
-  const person = prev ? prev.person : val("apName").replace(/\s+/g, " ");
+  if (acctUi.pat && acctUi.pat !== "new" && !prev) return;
+  const person = val("apName").replace(/\s+/g, " ");
   if (!person) return err("Enter the patient's name.");
-  if (!prev) {
-    const dup = liveCards().find(c => samePerson(c.person) === samePerson(person));
+  if (!prev || samePerson(person) !== samePerson(prev.person)) {
+    const other = c => !prev || c.id !== prev.id || !isMine(c);
+    const dup = liveCards().find(c => other(c) && samePerson(c.person) === samePerson(person));
     if (dup) return err(`You already have a patient named ${dup.person}.`);
     const theirs = [...sharedCards, ...memberCards].find(c => samePerson(c.person) === samePerson(person));
     if (theirs) return err(`${theirs.person} is already in Care Hours on ${ownerName(theirs.owner)}'s card. You'll find it on your Caregivers tab.`);
@@ -265,10 +267,15 @@ async function saveMyPatient(ev) {
   let phone = val("apPhone");
   if (phone) { phone = normPhone(phone); if (phone === null) return err("Enter the patient's phone number with its area code, like 317-555-0123."); }
   acctUi.patBusy = true; acctUi.patErr = ""; if ($("apSave")) { $("apSave").disabled = true; $("apSave").textContent = "Saving…"; }
+  if (prev && person !== prev.person) {
+    const r = await renamePatient(prev, person);
+    if (r.error) return err(r.error);
+  }
   const cl = await ensureMyClient();
   if (cl.error) return err("That didn't save. " + cl.error);
-  const id = prev ? prev.id : cardId(person);
-  const old = pcards.find(x => x.id === id);   // a patient removed earlier and added again gets their old card back
+  // A patient removed earlier and added again gets their old card back.
+  const old = prev ? pcards.find(x => x.id === prev.id) : pcards.find(x => x.id === cardId(person) && x.deleted);
+  const id = old ? old.id : freshCardId(person);
   putCard({ ...(old || {}), person, birthDate: dob || null, address: val("apAddress"), email, phone, notes: val("apNotes"),
     payerSame: false, payerRel: (old && old.payerRel) || "", clientId: cl.id, id, deleted: false, updatedAt: old ? old.updatedAt : 0 });
   acctUi = { ...acctUi, pat: null, patErr: "", patBusy: false };
@@ -322,8 +329,8 @@ async function saveCaregiverPatient(ev) {
   const client = await resolveClient(null, cl);
   if (client.error) return err(client.error);
   c.clientId = client.id;
-  const id = cardId(person);
-  const old = pcards.find(x => x.id === id);   // a patient removed earlier and added again gets their old card back
+  const old = pcards.find(x => x.id === cardId(person) && x.deleted);   // a patient removed earlier and added again gets their old card back
+  const id = old ? old.id : freshCardId(person);
   putCard({ ...(old || {}), ...c, id, deleted: false, updatedAt: old ? old.updatedAt : 0 });
   acctUi = { ...acctUi, pat: null, patBusy: false, notice: `${person} is added.` };
   renderAll(); renderAccount(true);

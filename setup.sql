@@ -10,6 +10,10 @@
 --     never change them. Shifts with no patient name are never shared.
 --   * Everyone else sees nothing.
 --
+-- Version 10 lets a patient's name be changed. The caregiver who set up the card, a caregiver on it, or the
+-- patient's client renames the patient everywhere at once: the card, and every shift, schedule entry and share
+-- of the caregivers on that card. If you ran version 9, run this whole file again. Nothing you have is changed.
+--
 -- Version 9 adds the Account Card: your address, and whether you're a caregiver or a client.
 --   * A client gets the payer side of the app even before anyone shares with them. Their details are saved as
 --     their client record, and the patients they add are linked to it, so a caregiver who adds the same
@@ -335,7 +339,8 @@ create or replace function public.guard_patient_edit() returns trigger
 language plpgsql set search_path = public
 as $$
 begin
-  if auth.uid() is not null and auth.uid() <> old.owner and (
+  -- rename_patient (version 10) renames for everyone on the card, so it's let through.
+  if auth.uid() is not null and auth.uid() <> old.owner and coalesce(current_setting('care_hours.renaming', true), '') <> 'on' and (
        new.owner <> old.owner or new.id <> old.id or new.deleted <> old.deleted
        or public.same_person(new.person) <> public.same_person(old.person)) then
     raise exception 'Only the caregiver can rename or remove a patient' using errcode = '42501';
@@ -709,3 +714,62 @@ grant execute on function public.is_card_client(uuid, text), public.can_see_clie
   public.request_patient(text, date, text), public.approve_patient_request(uuid, text, uuid) to authenticated;
 revoke execute on function public.is_card_client(uuid, text), public.can_see_client(text), public.find_client(text, text),
   public.request_patient(text, date, text), public.approve_patient_request(uuid, text, uuid) from anon, public;
+
+-- ---------- Version 10: renaming a patient ----------
+-- A patient's name ties together their card and every caregiver's shifts, schedule and shares, so a new name
+-- is given to all of them at once. Allowed for the caregiver who set up the card, a caregiver on it, and the
+-- patient's client or payer. the_old is the name being changed (the card may not be online yet for the
+-- caregiver who set it up). Answers the new name; fails with 23505 if a caregiver on the card already has a
+-- different patient by that name.
+create or replace function public.rename_patient(the_owner uuid, the_id text, the_old text, the_new text) returns text
+language plpgsql volatile security definer set search_path = public
+as $$
+declare nm text := btrim(regexp_replace(coalesce(the_new, ''), '\s+', ' ', 'g'));
+        was text := public.same_person(the_old);
+        cgs uuid[];
+begin
+  if auth.uid() is null or was = '' then
+    raise exception 'Not allowed' using errcode = '42501';
+  end if;
+  if char_length(nm) not between 1 and 100 then
+    raise exception 'Enter a name up to 100 characters' using errcode = '23514';
+  end if;
+  -- Someone other than the caregiver who set it up renames the card as it is online.
+  if the_owner <> auth.uid() and not exists (
+       select 1 from public.patients p where p.owner = the_owner and p.id = the_id and not p.deleted
+         and public.same_person(p.person) = was) then
+    raise exception 'Not allowed' using errcode = '42501';
+  end if;
+  if not (the_owner = auth.uid() or public.is_patient_member(the_owner, the_id)
+          or public.is_card_payer(the_owner, the_id) or public.is_card_client(the_owner, the_id)) then
+    raise exception 'Not allowed' using errcode = '42501';
+  end if;
+  -- The caregivers on the card: the one who set it up and the ones added to it.
+  select array_agg(distinct x) into cgs from (
+    select the_owner as x
+    union select u.id from public.patient_members m join auth.users u on lower(u.email) = m.member_email
+      where m.owner = the_owner and m.id = the_id) t;
+  if public.same_person(nm) <> was and exists (
+       select 1 from public.patients p where p.owner = any(cgs) and not p.deleted
+         and public.same_person(p.person) = public.same_person(nm)) then
+    raise exception 'Another patient already has that name' using errcode = '23505';
+  end if;
+  perform set_config('care_hours.renaming', 'on', true);
+  update public.patients set person = nm, updated_at = now()
+    where owner = any(cgs) and not deleted and public.same_person(person) = was;
+  update public.shifts set person = nm, updated_at = now()
+    where owner = any(cgs) and public.same_person(person) = was;
+  update public.schedule set person = nm, updated_at = now()
+    where owner = any(cgs) and kind <> 'off' and public.same_person(person) = was;
+  -- Shares: one per caregiver and viewer, so an old share under the new name gives way.
+  delete from public.shares n where n.owner = any(cgs) and public.same_person(n.person) = public.same_person(nm)
+    and public.same_person(nm) <> was
+    and exists (select 1 from public.shares o where o.owner = n.owner and o.viewer_email = n.viewer_email and public.same_person(o.person) = was);
+  update public.shares set person = nm where owner = any(cgs) and public.same_person(person) = was;
+  update public.patient_requests set person = nm where owner = the_owner and id = the_id;
+  perform set_config('care_hours.renaming', '', true);
+  return nm;
+end
+$$;
+revoke execute on function public.rename_patient(uuid, text, text, text) from anon, public;
+grant execute on function public.rename_patient(uuid, text, text, text) to authenticated;
