@@ -110,7 +110,16 @@ document.addEventListener("click", e => {
 // The tab shows the cards. "+ New patient" next to a picker on another tab opens just the form there.
 const peopleTab = () => view === "people" || view === "ppeople";
 function patientsCardShown() { return peopleTab() || (pcUi.isNew && !!pcUi.returnTo); }
+// Background updates (sync, messages) redraw the cards. Someone typing a caregiver's email keeps what
+// they typed (it's saved as they type) and their place in the box.
 function renderPatients() {
+  const a = document.activeElement, inInvite = a && a.id === "pcInviteEmail";
+  const caret = inInvite ? a.selectionStart : null;
+  drawPatients();
+  const box = $("pcInviteEmail");
+  if (inInvite && box && box !== a) { box.focus({ preventScroll: true }); if (caret !== null) box.setSelectionRange(caret, caret); }
+}
+function drawPatients() {
   const el = $("patientsCard");
   if (!el) return;
   el.hidden = !patientsCardShown();
@@ -154,11 +163,12 @@ function wireCards(el) {
   el.querySelectorAll("[data-pc]").forEach(b => b.addEventListener("click", () => {
     const k = b.dataset.pc;
     pcUi = { ...pcUi, open: pcUi.open === k && !pcUi.edit ? null : k, edit: false, isNew: false, confirmDel: false, err: "", notice: "",
-      memberErr: "", memberOk: "", confirmMember: null, confirmLeave: false };
+      memberErr: "", memberOk: "", inviteEmail: "", confirmMember: null, confirmLeave: false };
     renderPatients();
   }));
   // Caregivers on a card.
   if ($("pcInvite")) $("pcInvite").addEventListener("submit", inviteCaregiver);
+  if ($("pcInviteEmail")) $("pcInviteEmail").addEventListener("input", e => { pcUi.inviteEmail = e.target.value; });
   el.querySelectorAll("[data-pc-unmember]").forEach(b => b.addEventListener("click", () => { pcUi.confirmMember = b.dataset.pcUnmember; renderPatients(); }));
   el.querySelectorAll("[data-pc-unmember-no]").forEach(b => b.addEventListener("click", () => { pcUi.confirmMember = null; renderPatients(); }));
   el.querySelectorAll("[data-pc-unmember-yes]").forEach(b => b.addEventListener("click", () => removeCaregiver(b.dataset.pcUnmemberYes)));
@@ -218,7 +228,7 @@ function renderCaregivers(el) {
   el.querySelectorAll("[data-cg]").forEach(b => b.addEventListener("click", () => {
     const id = b.dataset.cg;
     pcUi = { ...pcUi, openCg: openId === id ? null : id, open: null, edit: false, confirmDel: false, err: "", notice: "",
-      memberErr: "", memberOk: "", confirmMember: null, confirmLeave: false };
+      memberErr: "", memberOk: "", inviteEmail: "", confirmMember: null, confirmLeave: false };
     renderPatients();
   }));
   wireCards(el);
@@ -231,7 +241,7 @@ function newCard(returnTo) {
   $("patientsCard").scrollIntoView({ block: "start", behavior: "smooth" });
   focusForm();
 }
-function focusForm() { const f = $("pcClientName") || $("pcDob"); if (f && !f.disabled) f.focus({ preventScroll: true }); }
+function focusForm() { const f = $("pcName") || $("pcDob"); if (f && !f.disabled) f.focus({ preventScroll: true }); }
 
 function cardRow(c, ro) {
   const k = cardKey(c), open = pcUi.open === k;
@@ -282,15 +292,6 @@ function cardForm(c) {
   const age = ageOf(v.birthDate);
   return `<form class="form pcform" id="pcForm" novalidate>
     <h3>${c ? `Edit ${esc(c.person)}` : "New patient"}</h3>
-    <fieldset class="payer"><legend>Client Details</legend>
-      <label class="checkline"><input type="checkbox" id="pcSame"${v.payerSame ? " checked" : ""}> The patient is the client (same details)</label>
-      ${f("pcClientName", "Name", cl.name, 'autocomplete="off" maxlength="100"')}
-      ${f("pcClientRel", "Relationship to patient", v.payerRel, 'autocomplete="off" placeholder="Daughter, son, spouse…"')}
-      ${ta("pcClientAddress", "Address", cl.address)}
-      ${f("pcClientPhone", "Phone", showPhone(cl.phone), 'type="tel" inputmode="tel" autocomplete="off"')}
-      ${f("pcClientEmail", "Email", cl.email, 'type="email" inputmode="email" autocomplete="off"')}
-      <p class="hint">A client who's already in Care Hours (same email and phone) is linked, not added again.</p>
-    </fieldset>
     <fieldset class="payer"><legend>Patient Details</legend>
       ${c ? `<div class="field"><span class="label">Name</span><b>${esc(c.person)}</b></div>` : f("pcName", "Name", v.person, 'autocomplete="off" maxlength="100"')}
       <div class="field"><label class="label" for="pcDob">Date of birth</label>
@@ -300,14 +301,25 @@ function cardForm(c) {
       ${f("pcEmail", "Email", v.email, 'type="email" inputmode="email" autocomplete="off"')}
       ${ta("pcNotes", "Notes", v.notes, 4, "Allergies, routines, who to call, door codes…")}
     </fieldset>
+    <label class="checkline"><input type="checkbox" id="pcSame"${v.payerSame ? " checked" : ""}> The patient is the client (same details)</label>
+    <fieldset class="payer" id="pcClient"${v.payerSame ? " hidden" : ""}><legend>Client Details</legend>
+      ${f("pcClientName", "Name", cl.name, 'autocomplete="off" maxlength="100"')}
+      ${f("pcClientRel", "Relationship to patient", v.payerRel, 'autocomplete="off" placeholder="Daughter, son, spouse…"')}
+      ${ta("pcClientAddress", "Address", cl.address)}
+      ${f("pcClientPhone", "Phone", showPhone(cl.phone), 'type="tel" inputmode="tel" autocomplete="off"')}
+      ${f("pcClientEmail", "Email", cl.email, 'type="email" inputmode="email" autocomplete="off"')}
+      <p class="hint">A client who's already in Care Hours (same email and phone) is linked, not added again.</p>
+    </fieldset>
     <div class="err" id="pcErr" role="alert">${esc(pcUi.err)}</div>
     <div class="formacts"><button class="btn" type="submit" id="pcSave"${pcUi.busy ? " disabled" : ""}>${pcUi.busy ? "Saving…" : c ? "Save changes" : "Add patient"}</button>
       <button class="ghost" type="button" id="pcCancel">Cancel</button></div>
   </form>`;
 }
-// With "same details" checked, the client fields show the patient's details and can't be changed separately.
+// With "same details" checked, Client Details is hidden and its fields hold the patient's details;
+// unchecked, it shows again with whatever was typed there before.
 function mirrorPayer() {
   const same = $("pcSame").checked;
+  $("pcClient").hidden = same;
   const name = $("pcName") ? $("pcName").value : (currentCard() || {}).person || "";
   const pairs = [["pcClientName", name], ["pcClientAddress", $("pcAddress").value], ["pcClientEmail", $("pcEmail").value],
     ["pcClientPhone", $("pcPhone").value], ["pcClientRel", "Self"]];

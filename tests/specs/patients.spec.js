@@ -19,7 +19,8 @@ test.describe("Patients tab", () => {
     await expect(app.$("#weekCard")).toBeHidden();   // the tab shows only the cards
     await expect(app.$("#clock")).toBeHidden();
     await app.$("#addPatient").click();
-    await expect(app.$("#pcForm legend")).toHaveText(["Client Details", "Patient Details"]);
+    await expect(app.$("#pcForm legend")).toHaveText(["Patient Details", "Client Details"]);
+    await expect(app.$("#pcName")).toBeFocused();
     await app.$("#pcDob").fill("1944-03-03");
     await expect(app.$("#pcAge")).toHaveText("Age 82");   // worked out as you type
     await app.$("#pcCancel").click();
@@ -63,7 +64,9 @@ test.describe("Patients tab", () => {
     await app.$("#pcName").fill("Dad");
     await app.$("#pcAddress").fill("5 Pine Rd");
     await app.$("#pcEmail").fill("dad@example.com");
+    await expect(app.$("#pcClient")).toBeVisible();
     await app.$("#pcSame").check();
+    await expect(app.$("#pcClient")).toBeHidden();                      // only shown when the client is someone else
     await expect(app.$("#pcClientName")).toHaveValue("Dad");
     await expect(app.$("#pcClientRel")).toHaveValue("Self");
     await expect(app.$("#pcClientAddress")).toHaveValue("5 Pine Rd");
@@ -72,6 +75,7 @@ test.describe("Patients tab", () => {
     await app.$("#pcAddress").fill("7 Pine Rd");                       // stays the same as the patient
     await expect(app.$("#pcClientAddress")).toHaveValue("7 Pine Rd");
     await app.$("#pcSame").uncheck();                                   // what was typed before comes back
+    await expect(app.$("#pcClient")).toBeVisible();
     await expect(app.$("#pcClientName")).toHaveValue("Someone else");
     await expect(app.$("#pcClientAddress")).toBeEnabled();
     await app.$("#pcSame").check();
