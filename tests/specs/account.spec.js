@@ -73,9 +73,10 @@ test.describe("Account Card", () => {
     expect(db.rows("patients")[0]).toMatchObject({ owner: patId, person: "Mom", birth_date: "1944-03-03", address: "5 Oak Ln",
       phone: "+13175550100", email: "mom@example.com", notes: "Door code 4321", client_id: client.id });
 
-    // Editing a patient keeps the name and changes the rest.
+    // Editing a patient: the name can be changed too (see the renaming tests).
     await myPatientRow(pat, "Mom").getByRole("button", { name: "Edit" }).click();
-    await expect(pat.$("#apName")).toHaveCount(0);
+    await expect(pat.$("#apName")).toHaveValue("Mom");
+    await expect(pat.$("#apName")).toBeFocused();
     await pat.$("#apNotes").fill("Door code 9876");
     await pat.$("#apSave").click();
     await expect.poll(() => db.rows("patients")[0].notes).toBe("Door code 9876");

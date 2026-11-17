@@ -126,9 +126,10 @@ const myPatientName = () => patients().find(p => samePerson(p) === myPatient) ||
 const PALETTE = 8;
 function colorBook(lsKey) {
   let map = null;
-  return key => {
+  const load = () => { if (!map) { try { map = JSON.parse(getLS(lsKey) || "{}") || {}; } catch (e) { map = {}; } } };
+  const book = key => {
     if (!key) return -1;
-    if (!map) { try { map = JSON.parse(getLS(lsKey) || "{}") || {}; } catch (e) { map = {}; } }
+    load();
     if (!(key in map)) {
       const used = new Set(Object.values(map));
       let i = 0;
@@ -138,6 +139,14 @@ function colorBook(lsKey) {
     }
     return map[key];
   };
+  // A renamed patient keeps their color.
+  book.rename = (from, to) => {
+    load();
+    if (!from || !to || from === to || !(from in map) || to in map) return;
+    map[to] = map[from]; delete map[from];
+    setLS(lsKey, JSON.stringify(map));
+  };
+  return book;
 }
 const patientColorOf = colorBook(LS_COLORS);
 const caregiverColorOf = colorBook(LS_CG_COLORS);

@@ -158,6 +158,9 @@ button.day[aria-pressed="true"] { background: var(--surface); box-shadow: 0 0 0 
 .hint { color: var(--muted); font-size: 0.9rem; }
 .foot { color: var(--muted); font-size: 0.85rem; border-top: 1px solid var(--line); padding-top: 12px; }
 .tools { display: flex; gap: 8px; flex-wrap: wrap; }
+.dlpick { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 4px 0 10px; }
+.dlpick .err:empty { display: none; }
+.dlpick .err { flex-basis: 100%; }
 .install { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
 .install p { margin: 0; color: var(--muted); }
 

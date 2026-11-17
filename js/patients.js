@@ -20,6 +20,11 @@ const asPayer = c => readOnly() || sharedCards.includes(c);
 
 // One card per patient name, with the same id on every device, so two phones never make two cards for "Mom".
 const cardId = name => "p-" + samePerson(name);
+// The id for a new card: from its name, unless a renamed card already uses that id.
+function freshCardId(name) {
+  const o = pcards.find(x => x.id === cardId(name));
+  return !o || o.deleted ? cardId(name) : "p-" + newId();
+}
 const cardKey = c => (c.owner || "me") + "|" + c.id;
 
 function ageOf(dob, now = new Date()) {
@@ -63,6 +68,7 @@ async function relinkDuplicateClient(x) {
 // Every patient name already used on a shift, the schedule or a share gets a card, so it stays in the list.
 // A patient whose card was removed isn't brought back.
 function ensureCards() {
+  if (sb && me && !cardSharingLoaded) return;
   // Patients on a card another caregiver added you to don't need a card of your own.
   const have = new Set([...pcards, ...memberCards].map(c => samePerson(c.person)));
   const used = new Set([...mine(), ...sched.filter(e => !e.deleted && e.kind !== "off"), ...shares].map(x => samePerson(x.person)).filter(Boolean));
@@ -71,7 +77,7 @@ function ensureCards() {
     const k = samePerson(name);
     if (!used.has(k) || have.has(k)) continue;
     // Made with the oldest possible time, so a card saved on another device always wins.
-    pcards.push(normCard({ id: cardId(name), person: name, updatedAt: 1, dirty: true }));
+    pcards.push(normCard({ id: freshCardId(name), person: name, updatedAt: 1, dirty: true }));
     have.add(k); added = true;
   }
   if (added) { saveLocal(); push(); }
@@ -161,8 +167,9 @@ function wireCards(el) {
   el.querySelectorAll("[data-req-decline]").forEach(b => b.addEventListener("click", () => answerRequest(b.dataset.reqDecline, false)));
   el.querySelectorAll("[data-req-cancel]").forEach(b => b.addEventListener("click", () => answerRequest(b.dataset.reqCancel, false)));
   el.querySelectorAll("[data-pc]").forEach(b => b.addEventListener("click", () => {
-    const k = b.dataset.pc;
-    pcUi = { ...pcUi, open: pcUi.open === k && !pcUi.edit ? null : k, edit: false, isNew: false, confirmDel: false, err: "", notice: "",
+    const k = b.dataset.pc, where = b.dataset.where || "";
+    const same = pcUi.open === k && (pcUi.openWhere || "") === where;
+    pcUi = { ...pcUi, open: same && !pcUi.edit ? null : k, openWhere: where, edit: false, isNew: false, confirmDel: false, err: "", notice: "",
       memberErr: "", memberOk: "", inviteEmail: "", confirmMember: null, confirmLeave: false };
     renderPatients();
   }));
@@ -224,7 +231,13 @@ function renderCaregivers(el) {
       ${requestsSection()}
       ${pcUi.notice ? `<p class="ok-msg" id="pcNotice">${esc(pcUi.notice)}</p>` : ""}
       ${ids.length ? `<ul class="pclist">${ids.map(row).join("")}</ul>` : `<p class="empty">No caregivers share with you yet.</p>`}
+      ${clientPatientsSection()}
     </div>`;
+  if ($("cpAddPatient")) $("cpAddPatient").addEventListener("click", () => {
+    // Added on the Account Card, as the client's own patient.
+    acctUi = { ...acctUi, pat: "new", patErr: "", confirmDel: null }; renderAccount(true);
+    if ($("apForm")) { $("apForm").scrollIntoView({ block: "start", behavior: "smooth" }); $("apName").focus({ preventScroll: true }); }
+  });
   el.querySelectorAll("[data-cg]").forEach(b => b.addEventListener("click", () => {
     const id = b.dataset.cg;
     pcUi = { ...pcUi, openCg: openId === id ? null : id, open: null, edit: false, confirmDel: false, err: "", notice: "",
@@ -234,17 +247,30 @@ function renderCaregivers(el) {
   wireCards(el);
 }
 
+// A client's patients: the ones they added and the ones their caregivers share, one card each. Open one to edit
+// it (name too) or to add and remove its caregivers.
+function clientPatientsSection() {
+  const seen = new Set();
+  const cards = [...liveCards(), ...sharedCards].filter(c => { const k = cardKey(c); if (seen.has(k)) return false; seen.add(k); return true; })
+    .sort((a, b) => a.person.localeCompare(b.person) || (isMine(a) ? -1 : 1));
+  return `<div class="rowline" id="cpHead"><h3>Patients</h3><button type="button" class="ghost" id="cpAddPatient">+ Add patient</button></div>
+    ${cards.length ? `<ul class="pclist" id="cpList">${cards.map(c => cardRow(c, !isMine(c), "pats")).join("")}</ul>
+      <p class="hint">Open a patient to edit their details, or to add and remove their caregivers.</p>`
+      : `<p class="empty">No patients yet. Add the person you arrange care for.</p>`}`;
+}
+
 function newCard(returnTo) {
   if (readOnly()) return;
-  pcUi = { ...pcUi, open: null, edit: true, isNew: true, confirmDel: false, err: "", busy: false, returnTo: returnTo || null, notice: "" };
+  pcUi = { ...pcUi, open: null, openWhere: "", edit: true, isNew: true, confirmDel: false, err: "", busy: false, returnTo: returnTo || null, notice: "" };
   renderPatients();
   $("patientsCard").scrollIntoView({ block: "start", behavior: "smooth" });
   focusForm();
 }
 function focusForm() { const f = $("pcName") || $("pcDob"); if (f && !f.disabled) f.focus({ preventScroll: true }); }
 
-function cardRow(c, ro) {
-  const k = cardKey(c), open = pcUi.open === k;
+// where: which list the row is in, when a card shows in two (a client's Patients list, and under a caregiver).
+function cardRow(c, ro, where = "") {
+  const k = cardKey(c), open = pcUi.open === k && (pcUi.openWhere || "") === where;
   const age = ageOf(c.birthDate);
   const cl = clientOf(c);
   const payer = c.payerSame ? `Client: ${c.person} (Self)` : cl && cl.name ? `Client: ${cl.name}${c.payerRel ? ` (${c.payerRel})` : ""}` : "";
@@ -254,7 +280,7 @@ function cardRow(c, ro) {
     theirs && !ro ? "shared with you" : "", dup ? `also on ${ownerName(dup.owner)}'s card` : ""].filter(Boolean).join(" · ");
   const color = tint(c);   // patient color for caregivers, caregiver color for payers
   return `<li class="pcard${color}${open ? " open" : ""}">
-    <button type="button" class="prow" data-pc="${esc(k)}" aria-expanded="${open}">
+    <button type="button" class="prow" data-pc="${esc(k)}" data-where="${where}" aria-expanded="${open}">
       <span class="dot"></span><span class="pname"><b>${esc(c.person)}</b>${sub ? `<span class="hint">${esc(sub)}</span>` : ""}</span></button>
     ${open ? (pcUi.edit ? cardForm(c) : cardDetails(c, ro)) : ""}</li>`;
 }
@@ -293,7 +319,7 @@ function cardForm(c) {
   return `<form class="form pcform" id="pcForm" novalidate>
     <h3>${c ? `Edit ${esc(c.person)}` : "New patient"}</h3>
     <fieldset class="payer"><legend>Patient Details</legend>
-      ${c ? `<div class="field"><span class="label">Name</span><b>${esc(c.person)}</b></div>` : f("pcName", "Name", v.person, 'autocomplete="off" maxlength="100"')}
+      ${f("pcName", "Name", v.person, 'autocomplete="off" maxlength="100"')}
       <div class="field"><label class="label" for="pcDob">Date of birth</label>
         <div class="inline"><input type="date" id="pcDob" value="${esc(v.birthDate || "")}" max="${dateVal(new Date())}"><span class="hint" id="pcAge">${age !== null ? `Age ${age}` : ""}</span></div></div>
       ${ta("pcAddress", "Address", v.address)}
@@ -320,7 +346,7 @@ function cardForm(c) {
 function mirrorPayer() {
   const same = $("pcSame").checked;
   $("pcClient").hidden = same;
-  const name = $("pcName") ? $("pcName").value : (currentCard() || {}).person || "";
+  const name = $("pcName").value;
   const pairs = [["pcClientName", name], ["pcClientAddress", $("pcAddress").value], ["pcClientEmail", $("pcEmail").value],
     ["pcClientPhone", $("pcPhone").value], ["pcClientRel", "Self"]];
   for (const [id, val] of pairs) {
@@ -353,11 +379,14 @@ async function saveCard(ev) {
   const err = m => { pcUi.err = m; $("pcErr").textContent = m; };
   const val = id => ($(id) ? $(id).value.trim() : "");
   const prev = pcUi.isNew ? null : currentCard();
-  const person = pcUi.isNew ? val("pcName").replace(/\s+/g, " ") : prev && prev.person;
+  if (!pcUi.isNew && !prev) return;
+  const person = val("pcName").replace(/\s+/g, " ");
   if (!person) return err("Enter the patient's name.");
-  if (pcUi.isNew && liveCards().some(c => samePerson(c.person) === samePerson(person))) return err(`You already have a patient named ${liveCards().find(c => samePerson(c.person) === samePerson(person)).person}.`);
-  const shared = pcUi.isNew && memberCards.find(c => samePerson(c.person) === samePerson(person));
-  if (shared) return err(`${ownerName(shared.owner)} already shares a card for ${shared.person} with you.`);
+  const renamed = prev && person !== prev.person;
+  if (pcUi.isNew || (renamed && samePerson(person) !== samePerson(prev.person))) {
+    const taken = nameTaken(person, prev);
+    if (taken) return err(taken);
+  }
   const dob = val("pcDob");
   if (dob && (!/^\d{4}-\d\d-\d\d$/.test(dob) || parseDate(dob) > new Date() || dob < "1900-01-01")) return err("Enter a date of birth that isn't in the future.");
   const same = $("pcSame").checked;
@@ -396,18 +425,22 @@ async function saveCard(ev) {
     }
   }
   pcUi.busy = true; pcUi.err = ""; if ($("pcSave")) { $("pcSave").disabled = true; $("pcSave").textContent = "Saving…"; }
+  if (renamed) {
+    const r = await renamePatient(prev, person);
+    if (r.error) { pcUi.busy = false; if ($("pcSave")) { $("pcSave").disabled = false; $("pcSave").textContent = "Save changes"; } return err(r.error); }
+  }
   const client = await resolveClient(prev, cl);
   pcUi.busy = false;
   if (client.error) return err(client.error);
   c.clientId = client.id;
   if (prev ? !isMine(prev) : readOnly()) return saveSharedEdit(prev, c, client, prevEmail);   // a client's own card saves like any of yours
   // A patient removed earlier and added again gets their old card back.
-  const old = pcards.find(x => x.id === (prev ? prev.id : cardId(person)));
-  const key = cardKey({ id: old ? old.id : cardId(person) });
-  pcUi = { ...pcUi, open: key, edit: false, isNew: false, err: "", returnTo: null, notice: client.notice || "" };
-  putCard({ ...(old || {}), ...c, id: old ? old.id : cardId(person), deleted: false, updatedAt: old ? old.updatedAt : 0 });
+  const old = prev ? pcards.find(x => x.id === prev.id) : pcards.find(x => x.id === cardId(person) && x.deleted);
+  const id = old ? old.id : freshCardId(person);
+  pcUi = { ...pcUi, open: cardKey({ id }), edit: false, isNew: false, err: "", returnTo: null, notice: client.notice || "" };
+  putCard({ ...(old || {}), ...c, id, deleted: false, updatedAt: old ? old.updatedAt : 0 });
   renderAll();
-  const clientEmail = clientEmailOf(pcards.find(x => x.id === (old ? old.id : cardId(person))));
+  const clientEmail = clientEmailOf(pcards.find(x => x.id === id));
   if (isNew && clientEmail && clientEmail !== (me && me.email || "").toLowerCase() && sb && me) {
     // A new patient's client gets this caregiver's shifts, and an email to set up their client account.
     const said = await inviteClient(person, clientEmail);
@@ -504,13 +537,59 @@ async function saveSharedEdit(prev, c, client, prevEmail) {
     renderPatients(); return;
   }
   pcUi = { ...pcUi, edit: false, err: "", notice: (client && client.notice) || "" };
-  const onCard = memberCards.includes(prev);
+  const onCard = memberCards.some(x => x.owner === prev.owner && x.id === prev.id);
   await loadCardSharing();
   renderAll();
   if (onCard && !readOnly()) {   // a caregiver on the card who changed the client's email
     const now = [...memberCards].find(x => x.owner === prev.owner && x.id === prev.id);
-    await sharePayerTo(prev.person, clientEmailOf(now || { ...prev, ...c }), prevEmail);
+    await sharePayerTo(c.person, clientEmailOf(now || { ...prev, ...c }), prevEmail);
   }
+}
+
+// ---------- renaming a patient ----------
+// Why a name can't be used for a patient (null when it can). "prev" is the card being renamed.
+function nameTaken(person, prev) {
+  const k = samePerson(person);
+  const other = c => !prev || c.owner !== prev.owner || c.id !== prev.id;
+  const mineHit = liveCards().find(c => other(c) && samePerson(c.person) === k);
+  if (mineHit) return `You already have a patient named ${mineHit.person}.`;
+  const shared = memberCards.find(c => other(c) && samePerson(c.person) === k);
+  if (shared) return `${ownerName(shared.owner)} already shares a card for ${shared.person} with you.`;
+  return null;
+}
+// Gives a patient a new name everywhere: online (the card, and the shifts, schedule and shares of every caregiver
+// on it, by rename_patient) and on this device. Signed out, it's this device only. Answers {error} or {}.
+async function renamePatient(c, name) {
+  const nm = name.replace(/\s+/g, " ").trim();
+  if (!nm) return { error: "Enter the patient's name." };
+  if (nm.length > 100) return { error: "Enter a name up to 100 characters." };
+  if (nm === c.person) return {};
+  if (sb && me) {
+    const { error } = await sb.rpc("rename_patient", { the_owner: c.owner || me.id, the_id: c.id, the_old: c.person, the_new: nm });
+    if (error) return { error:
+      isNetworkError(error) ? "That didn't save. Check your connection and try again."
+      : error.code === "PGRST202" ? "Changing a patient's name needs the latest database setup. Run setup.sql in Supabase (version 10), then try again."
+      : error.code === "23505" ? `A caregiver on this card already has another patient named ${nm}.`
+      : "You can't change this patient's name. You may no longer have access to this patient." };
+  }
+  renameLocal(c.person, nm);
+  // What's shared with you (and by you) is matched by name too.
+  if (sb && me) { await loadShares(); await loadSharedWithMe(); await loadCardSharing(); }
+  renderAll();
+  return {};
+}
+// This device's own shifts, schedule, cards and shares for that patient, and its color and filters.
+function renameLocal(was, nm) {
+  const k = samePerson(was);
+  for (const list of [shifts, sched, pcards])
+    for (const x of list) if (samePerson(x.person) === k && !(list === sched && x.kind === "off")) {
+      x.person = nm; x.updatedAt = bump(x.updatedAt); x.dirty = true; x.failed = false;
+    }
+  for (const x of shares) if (samePerson(x.person) === k) x.person = nm;
+  patientColorOf.rename(k, samePerson(nm));
+  if (myPatient === k) myPatient = samePerson(nm);
+  if (samePerson(draftPerson) === k) draftPerson = nm;
+  saveLocal(); push();
 }
 
 // ---------- payers: the cards of patients shared with them ----------
@@ -526,8 +605,11 @@ function sharedWithoutCards() {
     .filter(r => { const k = r.owner + "|" + samePerson(r.person); if (seen.has(k)) return false; seen.add(k); return true; });
 }
 // Cards other caregivers added you to, cards payers can see, and who's on each card.
+// Signed in, cards for names on shifts wait until this has run once: a patient renamed on another device can
+// reach this one's shifts before the card it's on does, and would otherwise get a second card.
+let cardSharingLoaded = false;
 async function loadCardSharing() {
-  if (!sb || !me) { memberCards = []; sharedCards = []; cardMembers = {}; return; }
+  if (!sb || !me) { memberCards = []; sharedCards = []; cardMembers = {}; cardSharingLoaded = false; return; }
   try {
     const owners = await sb.rpc("patient_card_owners");
     if (!owners.error) for (const r of owners.data) cardOwnerNames[r.owner] = r.name;
@@ -559,6 +641,7 @@ async function loadCardSharing() {
   } catch (e) {
     // Offline: keep what's already loaded.
   }
+  cardSharingLoaded = true;
 }
 // A caregiver added to someone else's card shares their shifts for that patient with the card's client,
 // once per card (if they later remove that share under Sync & sharing, it isn't added back).

@@ -15,6 +15,8 @@ const { FakeDb } = require("./fake-db");
 
 const NOW = new Date("2026-11-04T20:00:00-05:00");
 const FAKE_CLIENT = fs.readFileSync(path.join(__dirname, "supabase-fake-client.js"), "utf8");
+const PDF_LIB = fs.readFileSync(require.resolve("jspdf/dist/jspdf.umd.min.js"), "utf8");
+const PDF_TABLE = fs.readFileSync(path.join(__dirname, "../node_modules/jspdf-autotable/dist/jspdf.plugin.autotable.min.js"), "utf8");
 const SYNC_ON = 'window.CARE_HOURS_CONFIG = { supabaseUrl: "https://fake-project.supabase.co", supabaseAnonKey: "sb_publishable_test" };';
 const SYNC_OFF = 'window.CARE_HOURS_CONFIG = { supabaseUrl: "", supabaseAnonKey: "" };';
 
@@ -50,6 +52,9 @@ const test = base.extend({
       await context.route("**/config.js", r => r.fulfill({ contentType: "text/javascript", body: sync ? SYNC_ON : SYNC_OFF }));
       await context.route("https://cdn.jsdelivr.net/npm/@supabase/**", r => r.fulfill({ contentType: "text/javascript", body: FAKE_CLIENT }));
       await context.route(/fonts\.(googleapis|gstatic)\.com/, r => r.abort());
+      // The PDF library, from the copy installed with the tests (the same files the CDN serves).
+      await context.route("https://cdn.jsdelivr.net/npm/jspdf@*/**", r => r.fulfill({ contentType: "text/javascript", body: PDF_LIB }));
+      await context.route("https://cdn.jsdelivr.net/npm/jspdf-autotable@*/**", r => r.fulfill({ contentType: "text/javascript", body: PDF_TABLE }));
       await context.route("https://fake-supabase.test/q", async r => {
         if (state.offline) return r.abort("internetdisconnected");
         state.inflight++;
@@ -219,10 +224,18 @@ class CareHours {
   }
 
   // ---------- downloads ----------
+  // "Download", then CSV or PDF.
   async downloadCsv() {
-    const [dl] = await Promise.all([this.page.waitForEvent("download"), this.$("#csvBtn").click()]);
+    await this.$("#csvBtn").click();
+    const [dl] = await Promise.all([this.page.waitForEvent("download"), this.$("#dlCsv").click()]);
     const file = await dl.path();
     return { name: dl.suggestedFilename(), text: fs.readFileSync(file, "utf8") };
+  }
+  async downloadPdf() {
+    await this.$("#csvBtn").click();
+    const [dl] = await Promise.all([this.page.waitForEvent("download"), this.$("#dlPdf").click()]);
+    const file = await dl.path();
+    return { name: dl.suggestedFilename(), bytes: fs.readFileSync(file) };
   }
 }
 

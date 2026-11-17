@@ -52,6 +52,33 @@ test.describe("Patient picker for caregivers", () => {
     await expect(app.weekTotal()).toHaveText("12h 00m");
   });
 
+  test("the clock, new shifts, new schedule entries and the PDF follow the patient picked", async ({ openApp }) => {
+    const app = await openApp({ sync: false });
+    await app.addShift({ date: "2026-11-02", start: "09:00", end: "12:00", patient: "Mom" });
+    await app.addShift({ date: "2026-11-03", start: "13:00", end: "15:00", patient: "Dad" });
+    await app.$("#myPatient").selectOption({ label: "Dad" });
+
+    await expect(app.$("#personIn")).toHaveValue("Dad");               // ready to clock in for Dad
+    await app.$("#addBtn").click();
+    await expect(app.$("#fPerson")).toHaveValue("Dad");
+    await app.show("schedule");
+    await app.$("[data-new=once]").click();
+    await expect(app.$("#pPerson")).toHaveValue("Dad");
+    await app.reload();
+    await app.$("#myPatient").selectOption({ label: "Dad" });
+
+    // The PDF too.
+    await app.show("worked");
+    const pdf = (await app.downloadPdf()).bytes.toString("latin1");
+    expect(pdf).toContain("(Patient: Dad)");
+    expect(pdf).not.toContain("(Mom)");
+
+    // Picking a different patient on the clock is kept.
+    await app.$("#personIn").selectOption("Mom");
+    await app.$("#prevWeek").click();
+    await expect(app.$("#personIn")).toHaveValue("Mom");
+  });
+
   test("a patient with nothing this week says so", async ({ openApp }) => {
     const app = await openApp({ sync: false });
     await app.addShift({ date: "2026-11-02", start: "09:00", end: "12:00", patient: "Mom" });

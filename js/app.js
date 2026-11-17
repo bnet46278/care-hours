@@ -89,7 +89,13 @@ function toggleList() { listOpen = !listOpen; setLS(LS_LIST_OPEN, listOpen ? "1"
 function toggleSched() { schedOpen = !schedOpen; setLS(LS_SCHED_OPEN, schedOpen ? "1" : "0"); applyCollapsed(); }
 $("listToggle").addEventListener("click", toggleList);
 $("planToggle").addEventListener("click", toggleSched);
-$("myPatient").addEventListener("change", e => { myPatient = e.target.value; confirmId = null; planConfirm = null; renderAll(); });
+// Everything below it on the Care Hours tab follows the patient picked: the hours, the clock, new shifts and
+// schedule entries, the lists and the download.
+$("myPatient").addEventListener("change", e => {
+  myPatient = e.target.value; confirmId = null; planConfirm = null;
+  if (myPatient !== "all" && !active()) draftPerson = myPatientName();
+  renderAll();
+});
 $("sharedRefresh").addEventListener("click", refreshShared);
 
 // ================= top-level render =================

@@ -408,16 +408,34 @@ $("prevWeek").addEventListener("click", () => { weekOffset--; confirmId = null; 
 $("nextWeek").addEventListener("click", () => { if (weekOffset < maxWeekAhead()) { weekOffset++; confirmId = null; renderAll(); } });
 $("thisWeek").addEventListener("click", () => { weekOffset = 0; renderAll(); });
 
-// ================= CSV export of the period on screen =================
-function csvCell(v) { const s = String(v ?? ""); return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }
-$("csvBtn").addEventListener("click", () => {
-  const R = viewRange(), ws = R.start, we = R.e;
-  const rows = data().filter(s => s.end && s.start >= ws.getTime() && s.start < we).sort((a, b) => a.start - b.start);
+// ================= download the period on screen: CSV or PDF =================
+// "Download" asks which format. Both cover the finished shifts in the period on screen (week, 2 weeks or month),
+// for the patient (or, for payers, the caregiver) picked.
+function exportData() {
+  const R = viewRange();
+  const rows = data().filter(s => s.end && s.start >= R.s && s.start < R.e).sort((a, b) => a.start - b.start);
   const ro = readOnly();
+  const who = ro ? (sharedCaregiver === "all" ? "shared" : cgName(sharedCaregiver)) : myPatient !== "all" ? myPatientName() : "";
+  const slug = who ? who.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" : "";
+  const period = rangeMode === "month" ? `month-${dateVal(R.start).slice(0, 7)}` : rangeMode === "2weeks" ? `2-weeks-of-${dateVal(R.start)}` : `week-of-${dateVal(R.start)}`;
+  return { R, rows, ro, file: `care-hours-${slug}${period}` };
+}
+const hoursOf = s => (s.end - s.start) / HOUR;
+function saveBlob(blob, name) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+function csvCell(v) { const s = String(v ?? ""); return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; }
+function downloadCsv() {
+  const { rows, ro, file } = exportData();
   const lines = [ro ? ["Date", "Start", "End", "Hours", "Patient", "Caregiver", "Notes"] : ["Date", "Start", "End", "Hours", "Patient", "Notes"]];
   let total = 0; const per = new Map();
   for (const s of rows) {
-    const h = (s.end - s.start) / HOUR; total += h;
+    const h = hoursOf(s); total += h;
     const base = [dateVal(new Date(s.start)), tFmt.format(new Date(s.start)), tFmt.format(new Date(s.end)), h.toFixed(2), patientName(s)];
     if (ro) { per.set(s.owner, (per.get(s.owner) || 0) + h); lines.push([...base, cgName(s.owner), s.note]); }
     else lines.push([...base, s.note]);
@@ -425,14 +443,89 @@ $("csvBtn").addEventListener("click", () => {
   if (ro) for (const [id, h] of [...per.entries()].sort((a, b) => cgName(a[0]).localeCompare(cgName(b[0]))))
     lines.push([`Total for ${cgName(id)}`, "", "", h.toFixed(2), "", cgName(id), ""]);
   lines.push(ro ? ["Total", "", "", total.toFixed(2), "", "", ""] : ["Total", "", "", total.toFixed(2), "", ""]);
-  const csv = lines.map(r => r.map(csvCell).join(",")).join("\r\n");
-  const who = readOnly() ? (sharedCaregiver === "all" ? "shared" : cgName(sharedCaregiver)) : myPatient !== "all" ? myPatientName() : "";
-  const slug = who ? who.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") + "-" : "";
-  const blob = new Blob([csv], { type: "text/csv" });
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
-  const period = rangeMode === "month" ? `month-${dateVal(ws).slice(0, 7)}` : rangeMode === "2weeks" ? `2-weeks-of-${dateVal(ws)}` : `week-of-${dateVal(ws)}`;
-  a.download = `care-hours-${slug}${period}.csv`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  saveBlob(new Blob([lines.map(r => r.map(csvCell).join(",")).join("\r\n")], { type: "text/csv" }), file + ".csv");
+}
+
+// The PDF library is fetched the first time someone makes a PDF (and kept for offline use after that).
+const PDF_LIBS = ["https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js",
+  "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.4/dist/jspdf.plugin.autotable.min.js"];
+let pdfLibs = null;
+function loadPdfLibs() {
+  const one = src => new Promise((ok, fail) => {
+    const el = document.createElement("script");
+    el.src = src; el.onload = ok; el.onerror = () => { el.remove(); fail(new Error("load")); };
+    document.head.appendChild(el);
+  });
+  if (!pdfLibs) pdfLibs = PDF_LIBS.reduce((p, src) => p.then(() => one(src)), Promise.resolve()).catch(e => { pdfLibs = null; throw e; });
+  return pdfLibs;
+}
+// The client (the person who pays) on a patient's card, if it has one.
+function clientNameOf(person) {
+  const k = samePerson(person);
+  const c = [...liveCards(), ...memberCards, ...sharedCards].find(x => samePerson(x.person) === k);
+  const cl = c && clientOf(c);
+  return cl && cl.name ? cl.name : "";
+}
+// A timesheet: who and when at the top; then each patient's shifts (date, time, hours and notes) under their
+// name and their client's, with their total; then, for payers with more than one caregiver, each caregiver's total; and the total.
+async function downloadPdf() {
+  await loadPdfLibs();
+  const { R, rows, ro, file } = exportData();
+  const doc = new window.jspdf.jsPDF({ unit: "pt", format: "letter" });
+  const fullDate = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+  const last = addDays(R.end, -1);
+  const onlyPatient = !ro && myPatient !== "all" ? myPatientName() : new Set(rows.map(patientName)).size === 1 ? patientName(rows[0]) : "";
+  const lines = [
+    ro ? `Caregiver: ${sharedCaregiver === "all" ? "All caregivers" : cgName(sharedCaregiver)}`
+      : (profile && profile.display_name) || (me && me.email) ? `Caregiver: ${(profile && profile.display_name) || me.email}` : "",
+    `Patient: ${onlyPatient || "All patients"}`,
+    onlyPatient && clientNameOf(onlyPatient) ? `Client: ${clientNameOf(onlyPatient)}` : "",
+    `Dates: ${fullDate.format(R.start)} to ${fullDate.format(last)}`,
+  ].filter(Boolean);
+  doc.setFontSize(18); doc.text("Care Hours timesheet", 40, 50);
+  doc.setFontSize(11); lines.forEach((t, i) => doc.text(t, 40, 74 + i * 16));
+  // One section per patient (a heading, their shifts, and their total), then the total for everyone.
+  const head = [["Date", ...(ro ? ["Caregiver"] : []), "Time", "Hours", "Notes"]];
+  const cols = head[0].length, hcol = head[0].indexOf("Hours");
+  const sumRow = (label, h, fill) => [{ content: label, colSpan: hcol, styles: { fontStyle: "bold", fillColor: fill } },
+    { content: h.toFixed(2), styles: { fontStyle: "bold", halign: "right", fillColor: fill } }, { content: "", colSpan: cols - hcol - 1, styles: { fillColor: fill } }];
+  const groups = new Map();
+  for (const s of rows) { const p = patientName(s); if (!groups.has(p)) groups.set(p, []); groups.get(p).push(s); }
+  const body = [];
+  for (const [p, list] of [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]))) {
+    const cl = clientNameOf(p);
+    body.push([{ content: cl ? `${p}   ·   Client: ${cl}` : p, colSpan: cols, styles: { fontStyle: "bold", fontSize: 11, textColor: 20, fillColor: [214, 232, 227] } }]);
+    for (const s of list) body.push([fullDate.format(new Date(s.start)), ...(ro ? [cgName(s.owner)] : []),
+      `${tFmt.format(new Date(s.start))} – ${tFmt.format(new Date(s.end))}`, hoursOf(s).toFixed(2), s.note || ""]);
+    body.push(sumRow(`Total for ${p}`, list.reduce((t, s) => t + hoursOf(s), 0), [245, 248, 247]));
+  }
+  if (!body.length) body.push([{ content: "No shifts worked in these dates.", colSpan: cols }]);
+  const foot = [];
+  if (ro) {   // payers: each caregiver's hours too, when there's more than one
+    const m = new Map(); for (const s of rows) m.set(cgName(s.owner), (m.get(cgName(s.owner)) || 0) + hoursOf(s));
+    if (m.size > 1) for (const [c, h] of [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]))) foot.push(sumRow(`Total for ${c}`, h, [235, 242, 240]));
+  }
+  foot.push(sumRow("Total hours", rows.reduce((t, s) => t + hoursOf(s), 0), [214, 232, 227]));
+  doc.autoTable({
+    head, body, foot, startY: 74 + lines.length * 16 + 8,
+    margin: { left: 40, right: 40 }, styles: { fontSize: 9, cellPadding: 5, overflow: "linebreak", valign: "top" },
+    headStyles: { fillColor: [30, 110, 95] }, footStyles: { fillColor: [235, 242, 240], textColor: 20, fontStyle: "bold" },
+    showFoot: "lastPage",
+    columnStyles: { 0: { cellWidth: 100 }, ...(ro ? { 1: { cellWidth: 80 } } : {}),
+      [hcol - 1]: { cellWidth: 110 }, [hcol]: { cellWidth: 44, halign: "right" } },
+  });
+  doc.save(file + ".pdf");
+}
+function showDownloadPick(on) {
+  $("dlPick").hidden = !on; $("csvBtn").setAttribute("aria-expanded", String(on)); $("dlErr").textContent = "";
+  if (on) $("dlCsv").focus();
+}
+$("csvBtn").addEventListener("click", () => showDownloadPick($("dlPick").hidden));
+$("dlCancel").addEventListener("click", () => { showDownloadPick(false); $("csvBtn").focus(); });
+$("dlCsv").addEventListener("click", () => { downloadCsv(); showDownloadPick(false); });
+$("dlPdf").addEventListener("click", async () => {
+  const b = $("dlPdf"); b.disabled = true; b.textContent = "Making PDF…"; $("dlErr").textContent = "";
+  try { await downloadPdf(); showDownloadPick(false); }
+  catch (e) { $("dlErr").textContent = "Couldn't make the PDF. Check your internet connection and try again."; }
+  finally { b.disabled = false; b.textContent = "PDF"; }
 });
