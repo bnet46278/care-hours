@@ -107,7 +107,8 @@ test.describe("Renaming a patient online", () => {
       await app.reload();
       await app.show("worked");
       await expect(app.shiftRows().first()).toContainText("Mother");
-      expect(await app.page.evaluate(() => patientList())).toEqual(["Mother"]);
+      // Ann's saved copy of the cards she's on says Mom until the fresh ones load, a moment after opening.
+      await expect.poll(() => app.page.evaluate(() => patientList())).toEqual(["Mother"]);
     }
     await cynda.waitSynced();
     expect(persons(db, "patients")).toEqual(["Mother"]);
