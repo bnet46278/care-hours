@@ -1,6 +1,7 @@
 # Raises VERSION in sw.js by one each time app files reach the main branch (for example when a pull request is
 # merged), so phones replace their saved offline copy of the app. Changes to only tests, the READMEs, setup.sql
-# or this folder don't raise it, and neither does a push that already changed VERSION by hand.
+# or this folder don't raise it, and neither does a push that already changed VERSION by hand. Pushing the new
+# VERSION starts GitHub Pages publishing by itself.
 name: Bump app version
 
 on:
@@ -14,7 +15,6 @@ on:
 
 permissions:
   contents: write   # to push the new VERSION
-  pages: write      # to ask GitHub Pages to publish it
 
 concurrency:
   group: bump-version
@@ -29,7 +29,6 @@ jobs:
           fetch-depth: 0
 
       - name: Raise VERSION in sw.js
-        id: bump
         env:
           BEFORE: ${{ github.event.before }}
         run: |
@@ -47,14 +46,7 @@ jobs:
           git commit -qam "Bump VERSION to care-hours-v$next"
           # Someone else may have pushed in the meantime: put this on top and try again.
           for i in 1 2 3; do
-            git push origin HEAD:main && echo "pushed=true" >> "$GITHUB_OUTPUT" && exit 0
+            git push origin HEAD:main && exit 0
             git pull --rebase origin main
           done
           exit 1
-
-      - name: Publish to GitHub Pages
-        if: steps.bump.outputs.pushed == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        # A push made by this workflow doesn't always start a Pages build by itself.
-        run: gh api -X POST "repos/${{ github.repository }}/pages/builds" || echo "Pages will publish on the next push."
