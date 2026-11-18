@@ -50,10 +50,13 @@ function renderAccount(force) {
     <p class="muted">Signed in as <b>${esc(me.email)}</b>${role ? ` · ${esc(roleLabel(role))}` : ""}</p>
     ${invited ? `<p class="ok-msg" id="acctInvited">A caregiver added you as a client in Care Hours. Check your details, then tap Save.</p>` : ""}
     <form id="nameForm" class="field acctform" novalidate>
-      <fieldset class="rolepick"><legend class="label">I use Care Hours as a</legend>
+      ${role
+        // Picked and saved once: it stays.
+        ? `<div class="field"><span class="label">I use Care Hours as a</span><b id="acctRoleFixed">${esc(roleLabel(role))}</b></div>`
+        : `<fieldset class="rolepick"><legend class="label">I use Care Hours as a</legend>
         <div class="inline">${radio("caregiver", "Caregiver")}${radio("client", "Client")}</div>
-        <span class="hint">Caregivers clock in and out and plan a schedule. Clients see the hours their caregivers share, and edit their patients' cards.</span>
-      </fieldset>
+        <span class="hint">Caregivers clock in and out and plan a schedule. Clients see the hours their caregivers share, and edit their patients' cards. You can't change this after you save.</span>
+      </fieldset>`}
       <div class="field"><label class="label" for="dispName">Name</label>
         <input id="dispName" autocomplete="name" maxlength="100" placeholder="${esc(me.email)}" value="${esc(pre("display_name", "name"))}">
         <span class="hint">What the people you share with see.</span></div>
@@ -84,8 +87,9 @@ async function saveAccount(ev) {
   const name = val("dispName").replace(/\s+/g, " ").trim().slice(0, 100);
   const address = val("acctAddress").trim().slice(0, 500);
   const phone = normPhone(val("dispPhone"));
+  // A role that's been saved can't be changed; until then, whatever is picked.
   const pick = document.querySelector('input[name="acctRole"]:checked');
-  const role = pick ? pick.value : myRole();
+  const role = myRole() || (pick ? pick.value : "");
   acctUi.err = "";
   if (phone === null) { fail("Enter a phone number with its area code, like 317-555-0123."); $("dispPhone").focus(); return; }
   if (role === "client" && !name) { fail("Enter your name. Your caregivers see it on your patients' cards."); $("dispName").focus(); return; }
