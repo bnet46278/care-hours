@@ -35,7 +35,8 @@ test.describe("Account Card", () => {
 
     // It's all there after reloading.
     await app.reload();
-    await expect(app.$("#acctRoleCaregiver")).toBeChecked();
+    await expect(app.$("#acctRoleFixed")).toHaveText("Caregiver");
+    await expect(app.$("#account input[type=radio]")).toHaveCount(0);   // can't be changed once saved
     await expect(app.$("#dispName")).toHaveValue("Cynda B.");
     await expect(app.$("#acctAddress")).toHaveValue("1 Main St\nIndianapolis");
     await expect(app.$("#dispPhone")).toHaveValue("317-555-0123");
@@ -105,7 +106,7 @@ test.describe("Account Card", () => {
     await expect(cg.locator(".pcard:not(.cgcard)")).toHaveCount(1);
   });
 
-  test("picking Caregiver or Client switches between the time clock and the payer side", async ({ openApp }) => {
+  test("Caregiver or Client is picked once: after saving it can't be changed", async ({ openApp, db }) => {
     const cynda = await openApp();
     await cynda.signIn("cynda@example.com");
     await cynda.addShift({ date: "2026-11-02", start: "09:00", end: "12:00", patient: "Mom" });
@@ -114,16 +115,46 @@ test.describe("Account Card", () => {
     const pat = await openApp();
     await pat.signIn("pat@example.com");
     await expect(pat.page.getByRole("tab")).toHaveText(["Care Hours", "Caregivers"]);   // worked out from what's shared
+    await expect(pat.$("#account .rolepick")).toContainText("You can't change this after you save.");
 
-    await saveAccount(pat, { role: "Caregiver" });
-    await expect(pat.$("#clock")).toBeVisible();
-    await expect(pat.page.getByRole("tab")).toHaveText(["Care Hours", "Caregivers", "Patients"]);
-    await expect(pat.$("#sync")).toBeVisible();
-
-    await saveAccount(pat, { role: "Client", name: "Pat P." });
+    // Before saving, the pick can still change.
+    await pat.$("#acctRoleCaregiver").check();
+    await pat.$("#acctRoleClient").check();
+    await saveAccount(pat, { name: "Pat P." });
+    expect(db.rows("profiles").find(r => r.email === "pat@example.com").role).toBe("client");
+    await expect(pat.$("#acctRoleFixed")).toHaveText("Client");
+    await expect(pat.$("#account input[type=radio]")).toHaveCount(0);
     await expect(pat.$("#clock")).toBeHidden();
     await expect(pat.page.getByRole("tab")).toHaveText(["Care Hours", "Caregivers"]);
     await expect(pat.weekTotal()).toHaveText("3h 00m");
+
+    // Saving again keeps it, and so does reloading.
+    await saveAccount(pat, { address: "9 Elm St" });
+    expect(db.rows("profiles").find(r => r.email === "pat@example.com")).toMatchObject({ role: "client", address: "9 Elm St" });
+    await pat.reload();
+    await expect(pat.$("#acctRoleFixed")).toHaveText("Client");
+  });
+
+  test("the Account Card is the last card on the page, for caregivers and clients", async ({ openApp }) => {
+    const lastCard = app => app.page.evaluate(() => {
+      const shown = [...document.querySelectorAll(".wrap > section, .wrap > aside, main > section, main > aside, body section, body aside")]
+        .filter(el => el.offsetParent !== null && el.getBoundingClientRect().height > 0);
+      return shown.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top).pop().id;
+    });
+    const cynda = await openApp();
+    await cynda.signIn("cynda@example.com");
+    await saveAccount(cynda, { role: "Caregiver", name: "Cynda B." });
+    for (const tab of ["Care Hours", "Patients"]) {
+      await cynda.tab(tab);
+      expect(await lastCard(cynda)).toBe("account");
+    }
+    const pat = await openApp();
+    await pat.signIn("pat@example.com");
+    await saveAccount(pat, { role: "Client", name: "Pat P." });
+    for (const tab of ["Care Hours", "Caregivers"]) {
+      await pat.tab(tab);
+      expect(await lastCard(pat)).toBe("account");
+    }
   });
 
   test("a name being typed survives the card redrawing", async ({ openApp }) => {

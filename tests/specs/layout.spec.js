@@ -127,7 +127,7 @@ test.describe("Week / 2 weeks / Month", () => {
 });
 
 test.describe("Page layout", () => {
-  test("on the payer screen, the caregivers card sits below Your account", async ({ openApp }) => {
+  test("on the payer screen, the caregivers card sits above Your account, which is last", async ({ openApp }) => {
     const cynda = await openApp();
     await cynda.signIn("cynda@example.com");
     await cynda.addShift({ date: "2026-11-02", start: "09:00", end: "12:00", patient: "Mom" });
@@ -137,7 +137,7 @@ test.describe("Page layout", () => {
     await payer.signIn("payer@example.com");
     await expect(payer.$("#sharedHead")).toBeVisible();
     const order = await payer.page.evaluate(() => [...document.querySelectorAll("#account, #sharedHead")].map(e => e.id));
-    expect(order).toEqual(["account", "sharedHead"]);
+    expect(order).toEqual(["sharedHead", "account"]);
   });
 
   test("the update notice stays hidden until a new version arrives", async ({ openApp }) => {
