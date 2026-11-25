@@ -28,6 +28,10 @@ Automated tests that open Care Hours in a real browser and use it the way a care
 
 To run one file or one test: `npx playwright test specs/schedule.spec.js`, or `npx playwright test -g "time off wins"`.
 
+## On GitHub
+
+The **Tests** workflow (`.github/workflows/tests.yml`) runs every test in both Chrome's engine and Safari's engine (iPhone) on GitHub's computers, for every pull request and every change to `main`. Each pull request shows a green check or a red cross for each. To run it by hand, open the repository's **Actions** tab, pick **Tests**, and click **Run workflow**. Each run keeps its report, with screenshots of anything that failed, under **Artifacts** for 14 days.
+
 ## What's covered
 
 | File | What it checks |
