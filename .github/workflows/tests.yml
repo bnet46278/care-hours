@@ -1,5 +1,5 @@
-# Runs the automated tests on GitHub's computers: Chrome's engine at a phone-sized window, and Safari's engine
-# with an iPhone screen. Runs on every pull request, on every change to main, and from the Actions tab
+# Runs the automated tests on GitHub's computers: Chrome's engine at a phone-sized window, Safari's engine
+# with an iPhone screen, and Chrome as on an Android phone (Pixel 7). Runs on every pull request, on every change to main, and from the Actions tab
 # (Run workflow). The report, with screenshots of anything that failed, is saved with each run.
 name: Tests
 
@@ -31,6 +31,9 @@ jobs:
           - name: iPhone (Safari)
             project: iphone
             browser: webkit
+          - name: Android (Chrome)
+            project: android
+            browser: chromium
     defaults:
       run:
         working-directory: tests

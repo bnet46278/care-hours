@@ -5,6 +5,7 @@
   "scripts": {
     "test": "playwright test --project=chromium",
     "test:iphone": "playwright test --project=iphone",
+    "test:android": "playwright test --project=android",
     "test:all": "playwright test",
     "test:ui": "playwright test --project=chromium --ui",
     "report": "playwright show-report"

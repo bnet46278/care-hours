@@ -22,7 +22,8 @@ Automated tests that open Care Hours in a real browser and use it the way a care
 | --- | --- |
 | `npm test` | All tests in Chrome's engine, at a phone-sized window |
 | `npm run test:iphone` | All tests in Safari's engine with an iPhone screen |
-| `npm run test:all` | Both |
+| `npm run test:android` | All tests in Chrome's engine as on an Android phone (a Pixel 7's screen, touch and zoom) |
+| `npm run test:all` | All three |
 | `npm run test:ui` | Opens Playwright's test window, where you can run one test and watch each step |
 | `npm run report` | Opens the report from the last run, with screenshots and traces of anything that failed |
 
@@ -30,7 +31,7 @@ To run one file or one test: `npx playwright test specs/schedule.spec.js`, or `n
 
 ## On GitHub
 
-The **Tests** workflow (`.github/workflows/tests.yml`) runs every test in both Chrome's engine and Safari's engine (iPhone) on GitHub's computers, for every pull request and every change to `main`. Each pull request shows a green check or a red cross for each. To run it by hand, open the repository's **Actions** tab, pick **Tests**, and click **Run workflow**. Each run keeps its report, with screenshots of anything that failed, under **Artifacts** for 14 days.
+The **Tests** workflow (`.github/workflows/tests.yml`) runs every test three ways on GitHub's computers: Chrome at a phone-sized window, Safari's engine on an iPhone, and Chrome on an Android phone (Pixel 7), for every pull request and every change to `main`. Each pull request shows a green check or a red cross for each. To run it by hand, open the repository's **Actions** tab, pick **Tests**, and click **Run workflow**. Each run keeps its report, with screenshots of anything that failed, under **Artifacts** for 14 days.
 
 ## What's covered
 
