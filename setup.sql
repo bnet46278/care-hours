@@ -10,6 +10,10 @@
 --     never change them. Shifts with no patient name are never shared.
 --   * Everyone else sees nothing.
 --
+-- Version 11 holds each week per patient. With "Hold each week" on, a caregiver shares each patient's weeks on
+-- their own, oldest week first, so a payer sees that patient's shifts up to the last week shared for them.
+-- If you ran version 10, run this whole file again. Weeks you already shared stay shared.
+--
 -- Version 10 lets a patient's name be changed. The caregiver who set up the card, a caregiver on it, or the
 -- patient's client renames the patient everywhere at once: the card, and every shift, schedule entry and share
 -- of the caregivers on that card. If you ran version 9, run this whole file again. Nothing you have is changed.
@@ -278,6 +282,56 @@ as $$
   )
 $$;
 
+-- Version 11: each patient's weeks are shared on their own. A row here is how far a caregiver has shared one
+-- patient (person is the patient's name in lower case, as same_person() gives it). Like shared_through on the
+-- profile, it only ever moves forward. Payers see a shift once it starts before the later of the two.
+create table if not exists public.shared_weeks (
+  owner uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  person text not null check (char_length(person) between 1 and 100),
+  shared_through timestamptz not null,
+  updated_at timestamptz not null default now(),
+  primary key (owner, person)
+);
+alter table public.shared_weeks enable row level security;
+
+create or replace function public.keep_week_shared() returns trigger
+language plpgsql as $$
+begin
+  new.person := public.same_person(new.person);
+  if tg_op = 'UPDATE' and new.shared_through < old.shared_through then
+    raise exception 'A shared week can''t be unshared' using errcode = '23514';
+  end if;
+  new.updated_at := now();
+  return new;
+end $$;
+drop trigger if exists keep_week_shared on public.shared_weeks;
+create trigger keep_week_shared before insert or update on public.shared_weeks
+  for each row execute function public.keep_week_shared();
+
+drop policy if exists "owner manages own shared weeks" on public.shared_weeks;
+create policy "owner manages own shared weeks" on public.shared_weeks
+  for all to authenticated using (owner = auth.uid()) with check (owner = auth.uid());
+drop policy if exists "viewers see how far a patient is shared" on public.shared_weeks;
+create policy "viewers see how far a patient is shared" on public.shared_weeks
+  for select to authenticated using (public.can_view_shift(owner, person));
+grant select, insert, update on public.shared_weeks to authenticated;
+
+-- True when a caregiver has shared the week this shift starts in, for this patient (always true when they
+-- don't hold weeks).
+create or replace function public.shift_released(the_owner uuid, the_start timestamptz, the_person text) returns boolean
+language sql stable security definer set search_path = public
+as $$
+  select not exists (
+    select 1 from public.profiles p
+    where p.id = the_owner and p.hold_weeks
+      and the_start >= greatest(coalesce(p.shared_through, '-infinity'::timestamptz),
+        coalesce((select w.shared_through from public.shared_weeks w
+                  where w.owner = the_owner and w.person = public.same_person(the_person)), '-infinity'::timestamptz))
+  )
+$$;
+grant execute on function public.shift_released(uuid, timestamptz, text) to authenticated;
+revoke execute on function public.shift_released(uuid, timestamptz, text) from anon, public;
+
 -- True when the signed-in caregiver was added to this patient card.
 create or replace function public.is_patient_member(the_owner uuid, the_id text) returns boolean
 language sql stable security definer set search_path = public
@@ -370,7 +424,7 @@ create policy "owner manages own shifts" on public.shifts
 drop policy if exists "shared viewers read shifts" on public.shifts;
 create policy "shared viewers read shifts" on public.shifts
   for select to authenticated
-  using (public.can_view_shift(owner, person) and public.shift_released(owner, start_at));
+  using (public.can_view_shift(owner, person) and public.shift_released(owner, start_at, person));
 
 -- Shares: owners manage their own share list.
 drop policy if exists "owner manages own shares" on public.shares;
@@ -766,6 +820,11 @@ begin
     and public.same_person(nm) <> was
     and exists (select 1 from public.shares o where o.owner = n.owner and o.viewer_email = n.viewer_email and public.same_person(o.person) = was);
   update public.shares set person = nm where owner = any(cgs) and public.same_person(person) = was;
+  -- How far each caregiver has shared this patient moves to the new name (version 11).
+  if to_regclass('public.shared_weeks') is not null and public.same_person(nm) <> was then
+    delete from public.shared_weeks where owner = any(cgs) and person = public.same_person(nm);
+    update public.shared_weeks set person = public.same_person(nm) where owner = any(cgs) and person = was;
+  end if;
   update public.patient_requests set person = nm where owner = the_owner and id = the_id;
   perform set_config('care_hours.renaming', '', true);
   return nm;

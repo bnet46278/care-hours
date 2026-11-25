@@ -82,7 +82,7 @@ When a caregiver adds a patient, the client (or the patient, if they're their ow
 - **Several caregivers, one card:** the patient's client, the payer, or any caregiver already on the card adds another caregiver by email (Caregivers, on the card). Added caregivers see and edit the same card and can pick that patient when logging shifts. The caregiver who set up the card, or the payer, can remove an added caregiver; an added caregiver can leave. Payers see the card when any of its caregivers shares the patient with them.
 - **A patient who's already in Care Hours:** adding a patient whose name, date of birth and phone all match another caregiver's card doesn't make a second card. Instead the patient's client gets a request (on their Caregivers or Patients tab) and approves or declines it; the caregiver can see the patient and log shifts only after it's approved. The caregiver can cancel a request while it's waiting.
 - **The client is shared automatically:** when a caregiver adds a patient, is added to a card, or changes the client's email, the client gets the caregiver's shifts for that patient, as if shared under Sync & sharing.
-- **Hold each week** (Sync & sharing, caregivers): payers don't see the current week's worked shifts until the caregiver taps **Share this week**. Sharing can't be undone, and earlier weeks that weren't shared yet can be shared too. Shifts in a shared week can still be fixed, and payers see the fix. The schedule is never held. Turning the option off shares everything.
+- **Hold each week** (Sync & sharing, caregivers): payers don't see a week's worked shifts until the caregiver shares it. Weekly sharing lists each patient the caregiver shares, with every week not shared yet (empty weeks too) and its hours. Each patient is shared on their own, oldest week first: only the oldest held week has a **Share** button. Sharing can't be undone. Shifts in a shared week can still be fixed, and payers see the fix. The schedule is never held. Turning the option off shares everything.
 - **Text button:** anyone can add a mobile number on their Account Card. The people they share with then get a **Text** button next to Message on the cards and in the conversation, which opens the phone's own Messages app, addressed to them.
 - **Time off wins.** A scheduled shift during the caregiver's time off is skipped and doesn't count as scheduled. **Skip this day** on a repeating shift adds time off for just that shift. Payers see time off only as "unavailable".
 
@@ -107,6 +107,8 @@ The `tests` folder has automated Playwright tests that use the app like a caregi
 If you change `setup.sql` (or pull a new version of it), run the whole file again in the Supabase SQL Editor. It's safe to run more than once.
 
 Version 4 of `setup.sql` adds messages and mobile numbers. Until you run it, the app works as before and the cards show no Messages section.
+
+Version 11 shares each patient's weeks on their own (Hold each week). Weeks you already shared stay shared. Until you run it, holding still works, but tapping **Share** on a patient's week asks for the latest setup.sql.
 
 Version 10 lets a patient's name be changed. The caregiver who set up the card, a caregiver on it, or the patient's client renames the patient for everyone on the card at once: the card, and their shifts, schedule and shares. Until you run it, everything else works, but changing a name asks for the latest setup.sql.
 

@@ -18,25 +18,27 @@
 //   * profiles have an address and a role ('', 'caregiver' or 'client') (version 9)
 //   * rename_patient renames a patient for everyone on the card: the card, and the shifts, schedule and shares
 //     of its caregivers; allowed for those caregivers and the patient's client or payer (version 10)
+//   * holding weeks goes patient by patient: shared_weeks says how far each patient is shared; payers see a
+//     shift once it starts before the later of that and the profile's shared_through (version 11)
 //   * signed-out visitors get nothing
 const { randomUUID } = require("crypto");
 
 // "Mom", "mom" and " Mom " are the same patient, as in setup.sql.
 const samePerson = p => String(p || "").replace(/\s+/g, " ").trim().toLowerCase();
 const KEYS = { shifts: ["owner", "id"], schedule: ["owner", "id"], shares: ["owner", "viewer_email", "person"], profiles: ["id"], messages: ["id"], patients: ["owner", "id"], patient_members: ["owner", "id", "member_email"],
-  clients: ["id"], patient_requests: ["owner", "id", "requester"] };
-const OWNER = { shifts: "owner", schedule: "owner", shares: "owner", profiles: "id", messages: "sender", patients: "owner", patient_members: "owner", clients: "owner", patient_requests: "requester" };
+  clients: ["id"], patient_requests: ["owner", "id", "requester"], shared_weeks: ["owner", "person"] };
+const OWNER = { shifts: "owner", schedule: "owner", shares: "owner", profiles: "id", messages: "sender", patients: "owner", patient_members: "owner", clients: "owner", patient_requests: "requester", shared_weeks: "owner" };
 // Columns people may set themselves, as granted in setup.sql (everything else is filled in by the database).
 const INSERT_COLS = { messages: ["recipient", "body"] };
 const UPDATE_COLS = { messages: ["read_at"] };
 
 class FakeDb {
   // now: the time the database clock starts at (each new row is a second later than the last).
-  // version: acts like a database set up with that version of setup.sql (9: no rename_patient; 8: no address or role on profiles; 7: no client records; 6: no shared patient cards; 5: no patient cards; 4: also no week holding; 3: also no messages or phone numbers).
-  constructor({ now = Date.now(), version = 10 } = {}) {
+  // version: acts like a database set up with that version of setup.sql (10: no shared_weeks; 9: no rename_patient; 8: no address or role on profiles; 7: no client records; 6: no shared patient cards; 5: no patient cards; 4: also no week holding; 3: also no messages or phone numbers).
+  constructor({ now = Date.now(), version = 11 } = {}) {
     this.version = version;
     this.users = new Map();   // email -> id
-    this.tables = { shifts: [], schedule: [], shares: [], profiles: [], messages: [], patients: [], patient_members: [], clients: [], patient_requests: [] };
+    this.tables = { shifts: [], schedule: [], shares: [], profiles: [], messages: [], patients: [], patient_members: [], clients: [], patient_requests: [], shared_weeks: [] };
     this.clock = +now;
     this.onChange = null;     // called with the table name after a write, like Supabase's live updates
     this.emails = [];         // emails the "notify" Edge Function sent: {to, kind: "invite" | "notice" | "request", person}
@@ -123,14 +125,20 @@ class FakeDb {
       this.tables.shares.some(o => o.owner === n.owner && o.viewer_email === n.viewer_email && samePerson(o.person) === was)));
     for (const r of this.tables.shares) if (cgs.has(r.owner) && samePerson(r.person) === was) r.person = nm;
     for (const r of this.tables.patient_requests) if (r.owner === the_owner && r.id === the_id) r.person = nm;
+    if (samePerson(nm) !== was) {
+      this.tables.shared_weeks = this.tables.shared_weeks.filter(r => !(cgs.has(r.owner) && r.person === samePerson(nm)));
+      for (const r of this.tables.shared_weeks) if (cgs.has(r.owner) && r.person === was) r.person = samePerson(nm);
+    }
     for (const t of ["patients", "shifts", "schedule", "shares", "patient_requests"]) this.changed(t);
     return { data: nm, error: null };
   }
   // shift_released() from setup.sql
-  released(owner, startAt) {
+  released(owner, startAt, person) {
     const p = this.tables.profiles.find(r => r.id === owner);
     if (!p || !p.hold_weeks) return true;
-    return !!p.shared_through && Date.parse(startAt) < Date.parse(p.shared_through);
+    const w = this.version >= 11 && this.tables.shared_weeks.find(r => r.owner === owner && r.person === samePerson(person));
+    const thru = Math.max(p.shared_through ? Date.parse(p.shared_through) : -Infinity, w ? Date.parse(w.shared_through) : -Infinity);
+    return Date.parse(startAt) < thru;
   }
   canMessage(other, me) { return !!other && other !== me.id && this.contacts(me).some(c => c.id === other); }
 
@@ -144,7 +152,7 @@ class FakeDb {
   }
   canRead(table, r, me) {
     if (!me.id) return false;
-    if (table === "shifts") return r.owner === me.id || (this.canViewPatient(r.owner, r.person, me) && this.released(r.owner, r.start_at));
+    if (table === "shifts") return r.owner === me.id || (this.canViewPatient(r.owner, r.person, me) && this.released(r.owner, r.start_at, r.person));
     if (table === "schedule") return r.owner === me.id ||
       (r.kind === "off" ? this.sharedWithMe(r.owner, me) : this.canViewPatient(r.owner, r.person, me));
     if (table === "shares") return r.owner === me.id || r.viewer_email === me.email;
@@ -154,6 +162,7 @@ class FakeDb {
     if (table === "clients") return this.canSeeClient(r.id, me);
     if (table === "patient_requests") return r.requester === me.id || this.isCardClient(r.owner, r.id, me);
     if (table === "patient_members") return this.canAddCaregiver(r.owner, r.id, me);
+    if (table === "shared_weeks") return r.owner === me.id || this.canViewPatient(r.owner, r.person, me);
     return false;
   }
   canWrite(table, r, me) {
@@ -252,7 +261,8 @@ class FakeDb {
     }
     const table = (this.version < 4 && q.table === "messages") || (this.version < 6 && q.table === "patients")
       || (this.version < 7 && q.table === "patient_members")
-      || (this.version < 8 && (q.table === "clients" || q.table === "patient_requests")) ? null : this.tables[q.table];
+      || (this.version < 8 && (q.table === "clients" || q.table === "patient_requests"))
+      || (this.version < 11 && q.table === "shared_weeks") ? null : this.tables[q.table];
     if (this.version < 4 && q.table === "profiles" && (q.rows || []).some(r => "phone" in r))
       return { data: null, error: { code: "PGRST204", message: "Could not find the 'phone' column of 'profiles' in the schema cache" } };
     for (const col of ["address", "role"])
@@ -276,6 +286,7 @@ class FakeDb {
       for (const raw of q.rows) {
         if (INSERT_COLS[q.table] && Object.keys(raw).some(k => !INSERT_COLS[q.table].includes(k))) return denied;
         const row = { ...raw };
+        if (q.table === "shared_weeks") row.person = samePerson(row.person);   // the keep_week_shared trigger
         if (q.table === "messages") Object.assign(row, { id: randomUUID(), read_at: null, created_at: this.stamp() });
         if (!(OWNER[q.table] in row)) row[OWNER[q.table]] = me.id;
         if (!this.canWrite(q.table, row, me)) return { data: null, error: { code: "42501", message: `new row violates row-level security policy for table "${q.table}"` } };
@@ -285,6 +296,8 @@ class FakeDb {
         // The keep_shared_through trigger: a shared week can't be unshared.
         if (q.table === "profiles" && i >= 0 && "shared_through" in row && table[i].shared_through &&
             (!row.shared_through || Date.parse(row.shared_through) < Date.parse(table[i].shared_through)))
+          return { data: null, error: { code: "23514", message: "A shared week can't be unshared" } };
+        if (q.table === "shared_weeks" && i >= 0 && Date.parse(row.shared_through) < Date.parse(table[i].shared_through))
           return { data: null, error: { code: "23514", message: "A shared week can't be unshared" } };
         if (this.version < 5 && q.table === "profiles" && ("hold_weeks" in row || "shared_through" in row))
           return { data: null, error: { code: "PGRST204", message: "Could not find the 'hold_weeks' column of 'profiles' in the schema cache" } };
