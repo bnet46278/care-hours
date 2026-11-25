@@ -1,0 +1,63 @@
+# Runs the automated tests on GitHub's computers: Chrome's engine at a phone-sized window, and Safari's engine
+# with an iPhone screen. Runs on every pull request, on every change to main, and from the Actions tab
+# (Run workflow). The report, with screenshots of anything that failed, is saved with each run.
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Chrome (phone size)
+            project: chromium
+            browser: chromium
+          - name: iPhone (Safari)
+            project: iphone
+            browser: webkit
+    defaults:
+      run:
+        working-directory: tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tests/package-lock.json
+
+      - name: Install the test tools
+        run: npm ci
+
+      - name: Install the browser
+        run: npx playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Run the tests
+        env:
+          CI: "1"
+        run: npx playwright test --project=${{ matrix.project }} --trace retain-on-failure
+
+      - name: Save the report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-${{ matrix.project }}
+          path: tests/playwright-report/
+          retention-days: 14
