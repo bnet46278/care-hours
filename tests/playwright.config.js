@@ -21,6 +21,8 @@ module.exports = defineConfig({
     { name: "chromium", use: { browserName: "chromium", viewport: { width: 390, height: 844 } } },
     // Safari's engine with an iPhone screen, closest to how caregivers use it. Run with: npm run test:iphone
     { name: "iphone", use: { ...devices["iPhone 13"] } },
+    // Chrome on an Android phone (a Pixel 7's screen, touch and zoom). Run with: npm run test:android
+    { name: "android", use: { ...devices["Pixel 7"] } },
   ],
   webServer: {
     command: "node serve.js",
